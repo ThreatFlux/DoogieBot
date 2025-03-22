@@ -1,0 +1,10 @@
+- Insted of "docker-compose" we use "docker compose"
+- All testing should be done in docker. We should not install any modules on the local system.
+- We should never use docker volumes. We should bind mount to the local filesystem.
+- everything should run in a single docker container.
+- when changes are amde we should auto reload the frotnend and backend to see the new code.
+- For API URL handling, always use the utilities in frontend/services/api.ts:
+  - Regular API calls should use the standard API functions (get, post, put, del) which automatically include the '/api/v1' prefix
+  - For special cases like EventSource that need direct access to the API, use the getApiUrl() function with useBaseUrl=false
+  - Do not modify the Next.js proxy configuration without careful consideration
+  - Never hardcode '/api/v1' in service files - let the api.ts utilities handle the prefixing

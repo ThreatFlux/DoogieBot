@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"  # Frontend
+      - "8000:8000"  # Backend API
+    volumes:
+      - ./:/app  # Bind mount for development
+    environment:
+      - NODE_ENV=development
+      - PYTHONPATH=/app
+      - FASTAPI_ENV=development
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - ALGORITHM=HS256
+      - DISABLE_SQL_LOGS=true
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - FIRST_ADMIN_EMAIL=${FIRST_ADMIN_EMAIL:-admin@example.com}
+      - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD:-change-this-password}
+      # LLM Service environment variables
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - LM_STUDIO_BASE_URL=${LM_STUDIO_BASE_URL:-http://localhost:8000}
+      # Memory management
+      - PYTHONMALLOC=debug
+      - PYTHONWARNINGS=always
+    restart: unless-stopped
+    entrypoint: ["/app/entrypoint.sh"]
+    # Add memory limits to prevent OOM issues
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G

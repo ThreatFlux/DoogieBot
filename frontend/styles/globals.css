@@ -1,0 +1,336 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Chat message styling */
+.chat-message {
+  @apply p-4 rounded-lg mb-4 max-w-[80%] shadow-sm;
+}
+
+.user-message {
+  @apply bg-primary-100 dark:bg-primary-900 ml-auto border border-primary-200 dark:border-primary-800;
+}
+
+.assistant-message {
+  @apply bg-secondary-100 dark:bg-secondary-800 mr-auto border border-secondary-200 dark:border-secondary-700;
+}
+
+.system-message {
+  @apply bg-gray-100 dark:bg-gray-800 mx-auto text-center text-sm border border-gray-200 dark:border-gray-700;
+}
+
+/* Message parts container */
+.message-parts {
+  @apply space-y-2;
+}
+
+/* Think tag styling */
+.think-tag {
+  @apply bg-yellow-100 dark:bg-yellow-900 p-2 rounded-md my-2 text-sm border border-yellow-200 dark:border-yellow-800;
+}
+
+.think-tag.incomplete {
+  @apply border-l-4 border-yellow-400 dark:border-yellow-600;
+}
+
+.think-tag.complete {
+  @apply transition-all duration-300;
+}
+
+.think-tag.collapsed {
+  @apply py-1;
+}
+
+.think-tag-header {
+  @apply font-medium text-yellow-700 dark:text-yellow-300 hover:text-yellow-800 dark:hover:text-yellow-200 transition-colors;
+}
+
+.think-tag-content {
+  @apply mt-1;
+}
+
+/* Markdown code block styling */
+.assistant-message pre,
+.user-message pre {
+  @apply bg-gray-100 dark:bg-gray-900 p-4 rounded-md my-4 overflow-x-auto border border-gray-200 dark:border-gray-700;
+}
+
+.assistant-message code,
+.user-message code {
+  @apply font-mono text-sm bg-gray-100 dark:bg-gray-900 px-1 py-0.5 rounded;
+}
+
+.assistant-message pre code,
+.user-message pre code {
+  @apply bg-transparent p-0 text-gray-800 dark:text-gray-200;
+}
+
+/* Ensure syntax highlighting works well in both light and dark modes */
+.prism-code {
+  @apply text-gray-800 dark:text-gray-200;
+}
+
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  @apply text-gray-500 dark:text-gray-400;
+}
+
+.token.punctuation {
+  @apply text-gray-700 dark:text-gray-300;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol {
+  @apply text-blue-600 dark:text-blue-400;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin {
+  @apply text-green-600 dark:text-green-400;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+  @apply text-yellow-600 dark:text-yellow-400;
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  @apply text-purple-600 dark:text-purple-400;
+}
+
+.token.function,
+.token.class-name {
+  @apply text-red-600 dark:text-red-400;
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  @apply text-orange-600 dark:text-orange-400;
+}
+
+/* Markdown headings */
+.assistant-message h1,
+.user-message h1 {
+  @apply text-2xl font-bold mt-6 mb-4;
+}
+
+.assistant-message h2,
+.user-message h2 {
+  @apply text-xl font-bold mt-5 mb-3;
+}
+
+.assistant-message h3,
+.user-message h3 {
+  @apply text-lg font-bold mt-4 mb-2;
+}
+
+.assistant-message h4,
+.user-message h4 {
+  @apply text-base font-bold mt-3 mb-2;
+}
+
+.assistant-message h5,
+.user-message h5 {
+  @apply text-sm font-bold mt-3 mb-2;
+}
+
+.assistant-message h6,
+.user-message h6 {
+  @apply text-xs font-bold mt-3 mb-2;
+}
+
+/* Markdown lists */
+.assistant-message ul,
+.user-message ul {
+  @apply list-disc pl-5 my-3;
+}
+
+.assistant-message ol,
+.user-message ol {
+  @apply list-decimal pl-5 my-3;
+}
+
+/* Nested lists */
+.assistant-message ul ul,
+.assistant-message ol ul,
+.assistant-message ul ol,
+.assistant-message ol ol,
+.user-message ul ul,
+.user-message ol ul,
+.user-message ul ol,
+.user-message ol ol {
+  @apply my-0 ml-4;
+}
+
+/* Markdown tables */
+.assistant-message table,
+.user-message table {
+  @apply w-full border-collapse my-4;
+}
+
+.assistant-message th,
+.user-message th {
+  @apply bg-gray-100 dark:bg-gray-800 p-2 border border-gray-300 dark:border-gray-700 font-bold;
+}
+
+.assistant-message td,
+.user-message td {
+  @apply p-2 border border-gray-300 dark:border-gray-700;
+}
+
+/* Markdown blockquotes */
+.assistant-message blockquote,
+.user-message blockquote {
+  @apply border-l-4 border-gray-300 dark:border-gray-700 pl-4 py-1 my-4 italic;
+}
+
+/* Markdown horizontal rules */
+.assistant-message hr,
+.user-message hr {
+  @apply border-t border-gray-300 dark:border-gray-700 my-6;
+}
+
+/* Markdown links */
+.assistant-message a,
+.user-message a {
+  @apply text-blue-600 dark:text-blue-400 hover:underline;
+}
+
+/* Markdown images */
+.assistant-message img,
+.user-message img {
+  @apply max-w-full h-auto my-4 rounded-md;
+}
+
+/* Markdown definition lists */
+.assistant-message dl,
+.user-message dl {
+  @apply my-4;
+}
+
+.assistant-message dt,
+.user-message dt {
+  @apply font-bold;
+}
+
+.assistant-message dd,
+.user-message dd {
+  @apply ml-4 mb-2;
+}
+
+/* Markdown strikethrough */
+.assistant-message del,
+.assistant-message s,
+.user-message del,
+.user-message s {
+  @apply line-through text-gray-500 dark:text-gray-400;
+}
+
+/* Markdown task lists */
+.assistant-message ul li[data-task-list-item],
+.user-message ul li[data-task-list-item] {
+  @apply list-none pl-0;
+}
+
+.assistant-message ul li[data-task-list-item] > input[type="checkbox"],
+.user-message ul li[data-task-list-item] > input[type="checkbox"] {
+  @apply mr-2 align-middle;
+}
+
+/* Ensure markdown content inherits styles properly */
+.user-message-content,
+.assistant-message-content {
+  @apply w-full;
+}
+
+.user-message-markdown,
+.assistant-message-markdown {
+  @apply w-full;
+}
+
+/* Apply styles to markdown elements directly */
+.user-message-markdown h1,
+.user-message-markdown h2,
+.user-message-markdown h3,
+.user-message-markdown h4,
+.user-message-markdown h5,
+.user-message-markdown h6,
+.user-message-markdown p,
+.user-message-markdown ul,
+.user-message-markdown ol,
+.user-message-markdown pre,
+.user-message-markdown blockquote,
+.user-message-markdown table,
+.user-message-markdown hr,
+.user-message-markdown img {
+  @apply max-w-full;
+}
+
+.assistant-message-markdown h1,
+.assistant-message-markdown h2,
+.assistant-message-markdown h3,
+.assistant-message-markdown h4,
+.assistant-message-markdown h5,
+.assistant-message-markdown h6,
+.assistant-message-markdown p,
+.assistant-message-markdown ul,
+.assistant-message-markdown ol,
+.assistant-message-markdown pre,
+.assistant-message-markdown blockquote,
+.assistant-message-markdown table,
+.assistant-message-markdown hr,
+.assistant-message-markdown img {
+  @apply max-w-full;
+}
