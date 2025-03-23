@@ -10,6 +10,7 @@
 - **FAISS**: Efficient similarity search and clustering of dense vectors
 - **Rank-BM25**: Implementation of the BM25 ranking function
 - **NetworkX**: Creation and analysis of graph structures for GraphRAG
+- **GraphRAG**: Specialized graph library optimized for RAG operations (alternative to NetworkX)
 - **PyPDF2/PDFMiner**: PDF parsing
 - **python-docx**: Microsoft Word document parsing
 - **Markdown**: Markdown parsing
@@ -148,6 +149,7 @@ python-multipart>=0.0.6
 faiss-cpu>=1.7.4
 rank-bm25>=0.2.2
 networkx>=3.1
+graphrag>=1.0.0  # Specialized graph library for RAG operations
 pypdf2>=3.0.0
 python-docx>=1.0.0
 markdown>=3.5

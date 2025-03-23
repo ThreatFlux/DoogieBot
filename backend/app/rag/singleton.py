@@ -1,9 +1,12 @@
 from typing import Optional
 import os
 import logging
+from sqlalchemy.orm import Session
 from app.rag.bm25_index import BM25Index
 from app.rag.faiss_store import FAISSStore
 from app.rag.graph_rag import GraphRAG
+from app.rag.networkx_implementation import NetworkXImplementation
+from app.rag.graphrag_implementation import GraphRAGImplementation
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -30,13 +33,14 @@ class RAGSingleton:
             cls._instance = super(RAGSingleton, cls).__new__(cls)
         return cls._instance
     
-    def initialize(self, index_dir: str = "./indexes"):
+    def initialize(self, index_dir: str = "./indexes", db: Optional[Session] = None):
         """
         Initialize RAG components if not already initialized.
         Thread-safe initialization with double-checked locking pattern.
         
         Args:
             index_dir: Directory containing index files
+            db: Optional database session for getting configuration
         """
         # Quick check without acquiring lock
         if self._initialized:
@@ -82,19 +86,50 @@ class RAGSingleton:
             else:
                 logger.warning("FAISS index not loaded")
             
-            # Initialize GraphRAG
-            self.graph_rag = GraphRAG(os.path.join(index_dir, "graph_rag.pkl"))
-            graph_loaded = self.graph_rag.load()
-            if graph_loaded:
-                logger.info(f"Graph loaded with {len(self.graph_rag.graph.nodes)} nodes and {len(self.graph_rag.graph.edges)} edges")
-            else:
-                logger.warning("Graph not loaded")
+            # Initialize GraphRAG with the appropriate implementation
+            self._initialize_graph_rag(index_dir, db)
             
             self._initialized = True
             logger.info("RAG components initialization complete")
         finally:
             # Release lock
             RAGSingleton._lock = False
+    
+    def _initialize_graph_rag(self, index_dir: str, db: Optional[Session] = None):
+        """
+        Initialize the GraphRAG component with the appropriate implementation.
+        
+        Args:
+            index_dir: Directory containing index files
+            db: Optional database session for getting configuration
+        """
+        # Get the graph implementation from the database if available
+        implementation = "networkx"  # Default to NetworkX
+        if db:
+            try:
+                from app.services.rag_config import RAGConfigService
+                implementation = RAGConfigService.get_graph_implementation(db)
+            except Exception as e:
+                logger.error(f"Error getting graph implementation from database: {str(e)}")
+        
+        # Create the appropriate graph implementation
+        graph_path = os.path.join(index_dir, "graph_rag.pkl")
+        if implementation == "graphrag":
+            logger.info("Using GraphRAG implementation")
+            graph_impl = GraphRAGImplementation(graph_path)
+        else:
+            logger.info("Using NetworkX implementation")
+            graph_impl = NetworkXImplementation(graph_path)
+        
+        # Create the GraphRAG instance with the implementation
+        self.graph_rag = GraphRAG(implementation=graph_impl)
+        
+        # Load the graph
+        graph_loaded = self.graph_rag.load()
+        if graph_loaded:
+            logger.info(f"Graph loaded with {self.graph_rag.get_node_count()} nodes and {self.graph_rag.get_edge_count()} edges")
+        else:
+            logger.warning("Graph not loaded")
     
     def get_bm25_index(self) -> BM25Index:
         """Get the BM25 index instance."""
@@ -125,9 +160,22 @@ class RAGSingleton:
         elif self.graph_rag is None:
             # If initialized but graph is None, create a new instance without full initialization
             logger.warning("GraphRAG was None despite initialization, creating new instance")
-            self.graph_rag = GraphRAG("./indexes/graph_rag.pkl")
-            self.graph_rag.load()
+            self._initialize_graph_rag("./indexes")
         return self.graph_rag
+    
+    def reset_graph(self, db: Optional[Session] = None):
+        """
+        Reset the graph implementation based on the current configuration.
+        
+        Args:
+            db: Optional database session for getting configuration
+        """
+        if self.graph_rag:
+            # Save the current graph if it exists
+            self.graph_rag.save()
+        
+        # Re-initialize the graph with the current configuration
+        self._initialize_graph_rag("./indexes", db)
     
     def clear_all(self):
         """Clear all RAG components."""

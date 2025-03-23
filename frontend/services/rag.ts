@@ -60,6 +60,32 @@ return { success: true };
 
 /**
 /**
+ * Get current graph implementation
+ */
+export const getGraphImplementation = async (): Promise<{ implementation?: string; error?: string }> => {
+  const response = await get<{ implementation: string }>('/rag/graph/implementation');
+
+  if (response.error) {
+    return { error: response.error };
+  }
+
+  return { implementation: response.data?.implementation };
+};
+
+/**
+ * Update graph implementation
+ */
+export const updateGraphImplementation = async (implementation: string): Promise<{ success?: boolean; error?: string }> => {
+  const response = await post('/rag/graph/implementation', { implementation });
+
+  if (response.error) {
+    return { error: response.error };
+  }
+
+  return { success: true };
+};
+
+/**
  * Rebuild GraphRAG specifically
  */
 export const rebuildGraphRAG = async (): Promise<{ success?: boolean; error?: string }> => {

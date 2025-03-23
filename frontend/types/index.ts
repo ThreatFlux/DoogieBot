@@ -164,6 +164,7 @@ export interface RAGComponentStatus {
   error_message?: string;
   node_count?: number;
   edge_count?: number;
+  implementation?: string;
 }
 
 export interface RAGBuildResult {

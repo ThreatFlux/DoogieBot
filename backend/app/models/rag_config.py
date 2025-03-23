@@ -15,6 +15,7 @@ class RAGConfig(Base):
     bm25_enabled = Column(Boolean, default=True)
     faiss_enabled = Column(Boolean, default=True)
     graph_enabled = Column(Boolean, default=True)
+    graph_implementation = Column(String, default="networkx")  # 'networkx' or 'graphrag'
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     

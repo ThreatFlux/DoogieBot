@@ -43,6 +43,8 @@ flowchart TD
    - Combines BM25 (keyword-based) and FAISS (vector-based) for comprehensive retrieval
    - GraphRAG for relationship-aware information retrieval
    - Support for multiple document formats
+   - Pluggable graph implementation with support for both NetworkX and GraphRAG
+   - Strategy pattern for selecting graph implementation based on configuration
 
 3. **External LLM Integration**
    - No local LLM hosting
@@ -145,6 +147,8 @@ sequenceDiagram
 5. **Strategy Pattern**
    - Interchangeable RAG strategies
    - Configurable retrieval methods
+   - Pluggable graph implementations (NetworkX/GraphRAG) through a common interface
+   - Runtime selection of graph implementation based on configuration
 
 ## User Authentication and Authorization
 

@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from pydantic import BaseModel
 
 
@@ -8,6 +8,13 @@ class RAGComponentToggle(BaseModel):
     """
     component: str
     enabled: bool
+
+
+class GraphImplementationUpdate(BaseModel):
+    """
+    Schema for updating the graph implementation.
+    """
+    implementation: Literal["networkx", "graphrag"]
 
 
 class RAGBuildOptions(BaseModel):
