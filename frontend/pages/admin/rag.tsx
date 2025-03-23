@@ -6,16 +6,26 @@ import { Card } from '../../components/ui/Card';
 import { Dialog } from '../../components/ui/Dialog';
 import withAdmin from '@/utils/withAdmin';
 import { RAGStats, RAGComponentStatus, RAGBuildOptions } from '@/types';
-import { getRAGStatus, buildIndexes, toggleRAGComponent, deleteAllChunks } from '@/services/rag';
+import {
+  getRAGStatus,
+  buildIndexes,
+  toggleRAGComponent,
+  deleteAllChunks,
+  getGraphImplementation,
+  updateGraphImplementation
+} from '@/services/rag';
 
 const RAGManagement = () => {
   const [stats, setStats] = useState<RAGStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdatingImpl, setIsUpdatingImpl] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRebuildDialog, setShowRebuildDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showImplDialog, setShowImplDialog] = useState(false);
+  const [graphImplementation, setGraphImplementation] = useState<string>('networkx');
   const [rebuildOptions, setRebuildOptions] = useState<RAGBuildOptions>({
     rebuild: false,
     use_bm25: true,
@@ -25,6 +35,7 @@ const RAGManagement = () => {
 
   useEffect(() => {
     loadRAGStatus();
+    loadGraphImplementation();
   }, []);
 
   const loadRAGStatus = async () => {
@@ -42,6 +53,39 @@ const RAGManagement = () => {
       console.error('Failed to load RAG status:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  const loadGraphImplementation = async () => {
+    try {
+      const { implementation, error } = await getGraphImplementation();
+      if (error) {
+        console.error('Failed to load graph implementation:', error);
+      } else if (implementation) {
+        setGraphImplementation(implementation);
+      }
+    } catch (err) {
+      console.error('Failed to load graph implementation:', err);
+    }
+  };
+  
+  const handleUpdateImplementation = async (implementation: string) => {
+    setIsUpdatingImpl(true);
+    setError(null);
+    try {
+      const { error } = await updateGraphImplementation(implementation);
+      if (error) {
+        setError(error);
+      } else {
+        setGraphImplementation(implementation);
+        setShowImplDialog(false);
+        await loadRAGStatus();
+      }
+    } catch (err) {
+      setError('Failed to update graph implementation');
+      console.error('Failed to update graph implementation:', err);
+    } finally {
+      setIsUpdatingImpl(false);
     }
   };
 
@@ -85,13 +129,25 @@ const RAGManagement = () => {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             {name}
           </h3>
-          <Button
-            variant={status.enabled ? 'default' : 'outline'}
-            onClick={() => handleToggleComponent(component, status.enabled)}
-            disabled={isIndexing}
-          >
-            {status.enabled ? 'Enabled' : 'Disabled'}
-          </Button>
+          <div className="flex space-x-2">
+            {component === 'graph' && (
+              <Button
+                variant="outline"
+                onClick={() => setShowImplDialog(true)}
+                disabled={isIndexing || isUpdatingImpl}
+                className="text-xs"
+              >
+                Implementation: {status.implementation || 'networkx'}
+              </Button>
+            )}
+            <Button
+              variant={status.enabled ? 'default' : 'outline'}
+              onClick={() => handleToggleComponent(component, status.enabled)}
+              disabled={isIndexing}
+            >
+              {status.enabled ? 'Enabled' : 'Disabled'}
+            </Button>
+          </div>
         </div>
         
         <div className="space-y-2">
@@ -288,6 +344,64 @@ const RAGManagement = () => {
               disabled={!rebuildOptions.use_bm25 && !rebuildOptions.use_faiss && !rebuildOptions.use_graph}
             >
               {isIndexing ? 'Rebuilding...' : 'Rebuild'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog
+        isOpen={showImplDialog}
+        onClose={() => setShowImplDialog(false)}
+        title="Select Graph Implementation"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Select which graph implementation to use for the Graph RAG component.
+          </p>
+          
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <input
+                type="radio"
+                id="networkx"
+                name="implementation"
+                value="networkx"
+                checked={graphImplementation === 'networkx'}
+                onChange={(e) => setGraphImplementation(e.target.value)}
+                className="mr-2"
+              />
+              <label htmlFor="networkx">NetworkX (Default)</label>
+            </div>
+            
+            <div className="flex items-center">
+              <input
+                type="radio"
+                id="graphrag"
+                name="implementation"
+                value="graphrag"
+                checked={graphImplementation === 'graphrag'}
+                onChange={(e) => setGraphImplementation(e.target.value)}
+                className="mr-2"
+              />
+              <label htmlFor="graphrag">GraphRAG (Experimental)</label>
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowImplDialog(false)}
+              disabled={isUpdatingImpl}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => handleUpdateImplementation(graphImplementation)}
+              isLoading={isUpdatingImpl}
+              disabled={isUpdatingImpl}
+            >
+              {isUpdatingImpl ? 'Updating...' : 'Update Implementation'}
             </Button>
           </div>
         </div>

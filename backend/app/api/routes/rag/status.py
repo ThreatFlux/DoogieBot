@@ -48,8 +48,8 @@ async def get_rag_status(
     # Get counts from the singleton instances
     bm25_doc_count = len(bm25_index.doc_ids) if bm25_index else 0
     faiss_doc_count = len(faiss_store.doc_ids) if faiss_store else 0
-    graph_node_count = len(graph_rag.graph.nodes) if graph_rag else 0
-    graph_edge_count = len(graph_rag.graph.edges) if graph_rag else 0
+    graph_node_count = graph_rag.get_node_count() if graph_rag else 0
+    graph_edge_count = graph_rag.get_edge_count() if graph_rag else 0
     
     # Get RAG component configuration
     rag_config = RAGConfigService.get_config(db)

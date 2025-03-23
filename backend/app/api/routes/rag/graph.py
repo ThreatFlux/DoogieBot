@@ -26,7 +26,7 @@ async def analyze_graph(
     graph_rag = rag_singleton.get_graph_rag()
     
     # Check if graph is loaded
-    if not graph_rag or len(graph_rag.graph.nodes) == 0:
+    if not graph_rag or graph_rag.get_node_count() == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Graph not found or empty",
@@ -63,7 +63,7 @@ async def get_important_nodes(
     graph_rag = rag_singleton.get_graph_rag()
     
     # Check if graph is loaded
-    if not graph_rag or len(graph_rag.graph.nodes) == 0:
+    if not graph_rag or graph_rag.get_node_count() == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Graph not found or empty",
@@ -101,7 +101,7 @@ async def get_graph_node(
     graph = rag_singleton.get_graph_rag()
     
     # Check if graph is loaded
-    if not graph or len(graph.graph.nodes) == 0:
+    if not graph or graph.get_node_count() == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Graph not found or empty",
@@ -131,7 +131,7 @@ async def get_node_neighbors(
     graph = rag_singleton.get_graph_rag()
     
     # Check if graph is loaded
-    if not graph or len(graph.graph.nodes) == 0:
+    if not graph or graph.get_node_count() == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Graph not found or empty",
@@ -161,7 +161,7 @@ async def search_graph(
     graph = rag_singleton.get_graph_rag()
     
     # Check if graph is loaded
-    if not graph or len(graph.graph.nodes) == 0:
+    if not graph or graph.get_node_count() == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Graph not found or empty",
@@ -257,7 +257,7 @@ async def save_graph_to_database(
     graph = rag_singleton.get_graph_rag()
     
     # Check if graph is loaded
-    if not graph or len(graph.graph.nodes) == 0:
+    if not graph or graph.get_node_count() == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Graph not found or empty",
