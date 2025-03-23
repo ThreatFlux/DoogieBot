@@ -58,10 +58,19 @@ COPY frontend/package.json frontend/pnpm-lock.yaml* /app/frontend/
 WORKDIR /app/frontend
 RUN pnpm install
 
-# Copy frontend code
-COPY frontend/ /app/frontend/
+# Temporarily move node_modules out of the way
+RUN mv /app/frontend/node_modules /tmp/node_modules
+
+# Copy frontend code (will respect .dockerignore for node_modules)
+WORKDIR /app
+COPY --chown=doogie:doogie frontend/ /app/frontend/
+
+# Restore node_modules
+RUN rm -rf /app/frontend/node_modules && \
+    mv /tmp/node_modules /app/frontend/node_modules
 
 # Build frontend for production
+WORKDIR /app/frontend
 RUN NODE_ENV=production pnpm run build
 
 # Stage 3: Test stage
@@ -135,6 +144,13 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
 # Set working directory
 WORKDIR /app
 
+# Install Node.js and pnpm
+RUN apt-get update && \
+    apt-get install -y nodejs npm && \
+    npm install -g pnpm && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy backend dependencies from builder
 COPY --from=backend-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
@@ -142,6 +158,7 @@ COPY --from=backend-builder /usr/local/bin /usr/local/bin
 # Copy frontend build from builder
 COPY --from=frontend-builder /app/frontend/.next /app/frontend/.next
 COPY --from=frontend-builder /app/frontend/public /app/frontend/public
+COPY --from=frontend-builder /app/frontend/node_modules /app/frontend/node_modules
 COPY frontend/package.json frontend/next.config.js /app/frontend/
 
 # Copy backend code

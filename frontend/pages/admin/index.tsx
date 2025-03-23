@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { getUsers } from '@/services/user';
+import { getUsers, getPendingUsers } from '@/services/user';
 import { getRAGStats } from '@/services/document';
 import { getActiveLLMConfig } from '@/services/llm';
 import { getFlaggedChats } from '@/services/chat';
@@ -32,7 +32,7 @@ function AdminDashboard() {
         }
         
         // Get pending user count
-        const { users: pendingUsers } = await getUsers({ page: 1, size: 1 });
+        const { users: pendingUsers } = await getPendingUsers({ page: 1, size: 1 });
         if (pendingUsers) {
           setPendingUserCount(pendingUsers.total);
         }

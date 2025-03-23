@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Any, Dict, List, Optional, Union
-from pydantic import AnyHttpUrl, EmailStr, field_validator
+from pydantic import AnyHttpUrl, EmailStr, field_validator, validator
 from pydantic_settings import BaseSettings
 
 # Configure logging
@@ -43,9 +43,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     
-    # Admin user settings
-    FIRST_ADMIN_EMAIL: EmailStr = os.getenv("FIRST_ADMIN_EMAIL", "admin@example.com")
-    FIRST_ADMIN_PASSWORD: str = os.getenv("FIRST_ADMIN_PASSWORD", "change-this-password")
+    # Admin user settings (optional in production)
+    FIRST_ADMIN_EMAIL: Optional[str] = os.getenv("FIRST_ADMIN_EMAIL")
+    FIRST_ADMIN_PASSWORD: Optional[str] = os.getenv("FIRST_ADMIN_PASSWORD")
+    
+    @field_validator("FIRST_ADMIN_EMAIL", mode="before")
+    def validate_admin_email(cls, v: Optional[str]) -> Optional[str]:
+        if not v or v.strip() == "":
+            return None
+        return v
     
     # Database settings
     SQLITE_DATABASE_URL: str = "sqlite:///./doogie.db"
