@@ -15,7 +15,7 @@ from app.rag.faiss_store import FAISSStore
 from app.rag.singleton import rag_singleton
 from app.utils.deps import get_current_user, get_current_admin_user
 from app.core.config import settings
-from app.schemas.rag import RAGComponentToggle, RAGBuildOptions, RAGRetrieveOptions
+from app.schemas.rag import RAGComponentToggle, RAGBuildOptions, RAGRetrieveOptions, GraphImplementationUpdate
 
 router = APIRouter()
 
@@ -80,6 +80,7 @@ async def get_rag_status(
         },
         "graph_status": {
             "enabled": rag_config.graph_enabled,
+            "implementation": rag_config.graph_implementation,
             "document_count": graph_node_count,  # Use node count as document count
             "node_count": graph_node_count,
             "edge_count": graph_edge_count,
@@ -177,6 +178,50 @@ async def toggle_rag_component(
         "status": "success",
         "component": toggle_data.component,
         "enabled": toggle_data.enabled
+    }
+
+@router.get("/graph/implementation", response_model=Dict[str, str])
+async def get_graph_implementation(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """
+    Get the current graph implementation.
+    """
+    implementation = RAGConfigService.get_graph_implementation(db)
+    
+    return {
+        "implementation": implementation
+    }
+
+@router.post("/graph/implementation", response_model=Dict[str, Any])
+async def update_graph_implementation(
+    implementation_data: GraphImplementationUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Update the graph implementation. Admin only.
+    
+    This will change the implementation used for the graph RAG component.
+    Note: This will not rebuild the graph. You need to rebuild the graph after changing the implementation.
+    """
+    # Update implementation in database
+    config = RAGConfigService.update_graph_implementation(db, implementation_data.implementation)
+    
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update graph implementation"
+        )
+    
+    # Reset the singleton to use the new implementation
+    rag_singleton.reset_graph()
+    
+    return {
+        "status": "success",
+        "implementation": implementation_data.implementation,
+        "message": "Graph implementation updated. You need to rebuild the graph for the changes to take effect."
     }
 
 @router.post("/build-indexes", response_model=Dict[str, Any])
@@ -278,6 +323,7 @@ async def build_indexes(
             },
             "graph": {
                 "enabled": use_graph,
+                "implementation": rag_config.graph_implementation,
                 "status": "indexing" if use_graph else "skipped"
             }
         }
@@ -467,7 +513,11 @@ async def rebuild_graph(
             "chunk_count": 0
         }
     
-    graph = GraphRAG()
+    # Get the current graph implementation
+    implementation = RAGConfigService.get_graph_implementation(db)
+    
+    # Create a new graph instance with the current implementation
+    graph = rag_singleton.get_graph_rag()
     
     # Rebuild graph in background with timeout
     async def rebuild():
@@ -500,12 +550,12 @@ async def rebuild_graph(
     background_tasks.add_task(rebuild)
     
     # Estimate completion time based on chunk count
-    # This is a rough estimate - actual time will vary based on hardware and data
-    estimated_minutes = max(5, int(chunk_count / 50))  # Graph building is more intensive
+    estimated_minutes = max(5, int(chunk_count / 100))  # Rough estimate: 100 chunks per minute
     
     return {
         "status": "started",
         "message": f"Graph rebuilding started in the background with {chunk_count} document chunks. This may take {estimated_minutes} minutes or more to complete.",
+        "implementation": implementation,
         "chunk_count": chunk_count,
         "estimated_completion_minutes": estimated_minutes,
         "timeout_seconds": settings.RAG_INDEX_BUILD_TIMEOUT
@@ -513,6 +563,7 @@ async def rebuild_graph(
 
 @router.post("/graph/save-to-database", response_model=dict)
 async def save_graph_to_database(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> Any:
@@ -529,72 +580,60 @@ async def save_graph_to_database(
             detail="Graph not found or empty",
         )
     
-    nodes, edges = graph.save_to_database(db)
+    # Save graph to database in background
+    async def save():
+        try:
+            nodes, edges = graph.save_to_database(db)
+            print(f"Graph saved to database with {nodes} nodes and {edges} edges")
+        except Exception as e:
+            print(f"Error saving graph to database: {str(e)}")
+    
+    # Add the task to the background tasks
+    background_tasks.add_task(save)
     
     return {
-        "status": "success",
-        "nodes": nodes,
-        "edges": edges
+        "status": "started",
+        "message": "Graph saving to database started in the background"
     }
 
-@router.post("/delete-all-chunks", response_model=Dict[str, Any])
+@router.delete("/chunks", response_model=dict)
 async def delete_all_chunks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> Any:
     """
-    Delete all document chunks from the database. Admin only.
+    Delete all document chunks. Admin only.
     """
-    try:
-        num_deleted = DocumentService.delete_all_chunks(db)
-        return {
-            "status": "success",
-            "message": f"Successfully deleted {num_deleted} document chunks",
-            "chunks_deleted": num_deleted
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete chunks: {str(e)}"
-        )
+    # Delete all chunks
+    db.query(DocumentChunk).delete()
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": "All document chunks deleted"
+    }
 
-@router.post("/reset", response_model=Dict[str, Any])
+@router.post("/reset", response_model=dict)
 async def reset_rag_system(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> Any:
     """
-    Completely reset the RAG system by deleting all index files. Admin only.
+    Reset the RAG system. This will clear all indexes and delete all document chunks. Admin only.
     """
-    try:
-        # Set up index paths
-        index_dir = "./indexes"
-        os.makedirs(index_dir, exist_ok=True)
-        
-        # Delete index files
-        index_files = [
-            os.path.join(index_dir, "bm25_index.pkl"),
-            os.path.join(index_dir, "faiss_index.pkl"),
-            os.path.join(index_dir, "faiss_index.pkl.bin"),
-            os.path.join(index_dir, "graph_rag.pkl")
-        ]
-        
-        deleted_files = []
-        for file_path in index_files:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                deleted_files.append(os.path.basename(file_path))
-        
-        # Clear singleton instances
-        rag_singleton.clear_all()
-        
-        return {
-            "status": "success",
-            "message": f"Successfully reset RAG system. Deleted index files: {', '.join(deleted_files)}",
-            "deleted_files": deleted_files
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to reset RAG system: {str(e)}"
-        )
+    # Clear all indexes
+    rag_singleton.clear_all()
+    
+    # Delete all chunks
+    db.query(DocumentChunk).delete()
+    
+    # Delete all graph nodes and edges
+    db.query(GraphEdge).delete()
+    db.query(GraphNode).delete()
+    
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": "RAG system reset successfully"
+    }

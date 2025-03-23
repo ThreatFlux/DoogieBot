@@ -6,6 +6,7 @@ We have completed the initial setup phase (Phase 1) and the frontend development
 
 ## Recent Changes
 
+- Created detailed implementation plan for adding GraphRAG as an alternative to NetworkX
 - Updated API URL handling to support both regular and streaming requests
 - Implemented dual authentication support for EventSource endpoints
 - Fixed async streaming issues in chat endpoints
@@ -78,6 +79,8 @@ We have completed the initial setup phase (Phase 1) and the frontend development
    - Planning hybrid approach with BM25 and FAISS
    - GraphRAG structure designed with nodes and edges
    - Document processing pipeline to be implemented
+   - Created plan to add GraphRAG as an alternative to NetworkX for improved performance with large knowledge graphs
+   - Detailed implementation plan available in memory-bank/graphrag_implementation_plan.md
 
 5. **UI/UX Design**
    - Modern chat interface with Tailwind CSS implemented

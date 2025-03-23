@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 from sqlalchemy.orm import Session
 from app.models.rag_config import RAGConfig
 
@@ -22,7 +22,8 @@ class RAGConfigService:
             config = RAGConfig(
                 bm25_enabled=True,
                 faiss_enabled=True,
-                graph_enabled=True
+                graph_enabled=True,
+                graph_implementation="networkx"  # Default to NetworkX
             )
             db.add(config)
             db.commit()
@@ -55,6 +56,51 @@ class RAGConfigService:
             config.graph_enabled = enabled
         else:
             return None
+        
+        # Save changes
+        db.commit()
+        db.refresh(config)
+        
+        return config
+    
+    @staticmethod
+    def get_graph_implementation(db: Session) -> str:
+        """
+        Get the current graph implementation.
+        
+        Args:
+            db: Database session
+            
+        Returns:
+            Graph implementation name ('networkx' or 'graphrag')
+        """
+        config = RAGConfigService.get_config(db)
+        return config.graph_implementation
+    
+    @staticmethod
+    def update_graph_implementation(
+        db: Session, 
+        implementation: Literal["networkx", "graphrag"]
+    ) -> Optional[RAGConfig]:
+        """
+        Update the graph implementation.
+        
+        Args:
+            db: Database session
+            implementation: Graph implementation name ('networkx' or 'graphrag')
+            
+        Returns:
+            Updated RAG configuration
+        """
+        # Validate implementation
+        if implementation not in ["networkx", "graphrag"]:
+            return None
+        
+        # Get the config
+        config = RAGConfigService.get_config(db)
+        
+        # Update the implementation
+        config.graph_implementation = implementation
         
         # Save changes
         db.commit()

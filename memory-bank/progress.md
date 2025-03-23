@@ -43,6 +43,7 @@ The project has completed its initial setup phase and frontend development phase
 - [ ] Develop BM25 indexing
 - [ ] Set up FAISS vector store
 - [ ] Implement GraphRAG
+  - [x] Create implementation plan for GraphRAG as an alternative to NetworkX
 - [x] Create LLM service integrations
 - [x] Develop streaming response handling
 - [x] Implement API endpoints for user management
@@ -127,7 +128,7 @@ The project has completed its initial setup phase and frontend development phase
 | Project Structure | ✅ Completed | Set up basic project structure and Docker configuration |
 | Backend Core | 🔄 In Progress | Implement core backend functionality |
 | Frontend Core | ✅ Completed | Implement core frontend components |
-| RAG Implementation | 🔄 Pending | Develop the hybrid RAG system |
+| RAG Implementation | 🔄 In Progress | Develop the hybrid RAG system with GraphRAG alternative |
 | LLM Integration | ✅ Completed | Integrate external LLM services |
 | Admin Features | ✅ Completed | Implement administrative functionality |
 | User Features | ✅ Completed | Implement user-facing features |
@@ -143,6 +144,10 @@ The project has completed its initial setup phase and frontend development phase
 3. Develop document processing functionality
 4. Create BM25 and FAISS indexing
 5. Implement GraphRAG
+   - ✅ Create implementation plan for GraphRAG as an alternative to NetworkX
+   - [ ] Implement abstraction layer for graph operations
+   - [ ] Create GraphRAG adapter implementation
+   - [ ] Update configuration system to support switching between implementations
 6. ✅ Integrate with external LLM services
 7. Implement feedback mechanism for chat responses
 8. Add unit tests for chat functionality

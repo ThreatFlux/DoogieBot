@@ -1,38 +1,16 @@
 from typing import List, Dict, Any, Optional, Tuple, Set
-import os
 import logging
 from sqlalchemy.orm import Session
-
-from app.rag.graph_interface import GraphInterface
-from app.rag.networkx_implementation import NetworkXImplementation
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class GraphRAG:
+class GraphInterface:
     """
-    Graph-based RAG for relationship-aware retrieval.
-    This class is a wrapper around a graph implementation that provides the actual functionality.
+    Abstract base class for graph implementations.
+    This interface defines the methods that must be implemented by any graph implementation.
     """
-    
-    def __init__(self, graph_path: str = "graph_rag.pkl", implementation: Optional[GraphInterface] = None):
-        """
-        Initialize the GraphRAG.
-        
-        Args:
-            graph_path: Path to save/load the graph
-            implementation: Graph implementation to use (NetworkX or GraphRAG)
-        """
-        self.graph_path = graph_path
-        
-        # Use the provided implementation or create a default NetworkX implementation
-        if implementation is not None:
-            self.graph = implementation
-            logger.info(f"Using provided graph implementation: {type(implementation).__name__}")
-        else:
-            self.graph = NetworkXImplementation(graph_path)
-            logger.info("Using default NetworkX implementation")
     
     def add_node(
         self, 
@@ -53,7 +31,7 @@ class GraphRAG:
         Returns:
             Node ID
         """
-        return self.graph.add_node(node_id, content, node_type, metadata)
+        raise NotImplementedError("Subclasses must implement add_node")
     
     def add_edge(
         self, 
@@ -76,7 +54,7 @@ class GraphRAG:
         Returns:
             Tuple of source and target node IDs
         """
-        return self.graph.add_edge(source_id, target_id, relation_type, weight, metadata)
+        raise NotImplementedError("Subclasses must implement add_edge")
     
     def get_node(self, node_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -88,7 +66,7 @@ class GraphRAG:
         Returns:
             Node data or None if not found
         """
-        return self.graph.get_node(node_id)
+        raise NotImplementedError("Subclasses must implement get_node")
     
     def get_neighbors(
         self, 
@@ -107,7 +85,7 @@ class GraphRAG:
         Returns:
             List of neighbor nodes
         """
-        return self.graph.get_neighbors(node_id, relation_type, max_depth)
+        raise NotImplementedError("Subclasses must implement get_neighbors")
     
     def search(
         self,
@@ -130,7 +108,7 @@ class GraphRAG:
         Returns:
             List of matching nodes
         """
-        return self.graph.search(query, node_types, relation_types, max_results, fast_mode)
+        raise NotImplementedError("Subclasses must implement search")
     
     def get_subgraph(
         self,
@@ -149,9 +127,13 @@ class GraphRAG:
         Returns:
             A subgraph object (implementation-specific)
         """
-        return self.graph.get_subgraph(node_ids, include_neighbors, max_neighbors)
+        raise NotImplementedError("Subclasses must implement get_subgraph")
     
-    def get_important_nodes(self, top_n: int = 10, method: str = "pagerank") -> List[Dict[str, Any]]:
+    def get_important_nodes(
+        self, 
+        top_n: int = 10, 
+        method: str = "pagerank"
+    ) -> List[Dict[str, Any]]:
         """
         Get the most important nodes in the graph using various centrality measures.
         
@@ -162,7 +144,7 @@ class GraphRAG:
         Returns:
             List of important nodes with scores
         """
-        return self.graph.get_important_nodes(top_n, method)
+        raise NotImplementedError("Subclasses must implement get_important_nodes")
     
     def save(self) -> bool:
         """
@@ -171,7 +153,7 @@ class GraphRAG:
         Returns:
             Success flag
         """
-        return self.graph.save()
+        raise NotImplementedError("Subclasses must implement save")
     
     def load(self) -> bool:
         """
@@ -180,13 +162,13 @@ class GraphRAG:
         Returns:
             Success flag
         """
-        return self.graph.load()
+        raise NotImplementedError("Subclasses must implement load")
     
     def clear(self) -> None:
         """
         Clear the graph.
         """
-        self.graph.clear()
+        raise NotImplementedError("Subclasses must implement clear")
     
     def analyze_graph(self) -> Dict[str, Any]:
         """
@@ -195,7 +177,7 @@ class GraphRAG:
         Returns:
             Dictionary of graph statistics
         """
-        return self.graph.analyze_graph()
+        raise NotImplementedError("Subclasses must implement analyze_graph")
     
     def build_from_database(self, db: Session) -> Tuple[int, int]:
         """
@@ -207,7 +189,7 @@ class GraphRAG:
         Returns:
             Tuple of (node_count, edge_count)
         """
-        return self.graph.build_from_database(db)
+        raise NotImplementedError("Subclasses must implement build_from_database")
     
     def save_to_database(self, db: Session) -> Tuple[int, int]:
         """
@@ -219,7 +201,7 @@ class GraphRAG:
         Returns:
             Tuple of (node_count, edge_count)
         """
-        return self.graph.save_to_database(db)
+        raise NotImplementedError("Subclasses must implement save_to_database")
     
     def get_node_count(self) -> int:
         """
@@ -228,7 +210,7 @@ class GraphRAG:
         Returns:
             Node count
         """
-        return self.graph.get_node_count()
+        raise NotImplementedError("Subclasses must implement get_node_count")
     
     def get_edge_count(self) -> int:
         """
@@ -237,4 +219,4 @@ class GraphRAG:
         Returns:
             Edge count
         """
-        return self.graph.get_edge_count()
+        raise NotImplementedError("Subclasses must implement get_edge_count")
