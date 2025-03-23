@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { Input } from '../../components/ui/Input';
 import withAdmin from '@/utils/withAdmin';
 import {
   getLLMProviders,
@@ -40,7 +41,6 @@ interface ProviderConfig {
   embedding_models: string[];
   isPolling: boolean;
 }
-
 const LLMConfiguration = () => {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([]);
@@ -287,6 +287,39 @@ const LLMConfiguration = () => {
       setError(err instanceof Error ? err.message : 'Failed to update system prompt');
     }
   };
+  
+  // Function to update RAG configuration
+  const updateRAGConfig = async () => {
+    // Find the active config
+    const activeConfig = configs.find(config => config.is_active);
+    if (!activeConfig) return;
+    
+    try {
+      // Get the current rag_top_k value
+      const rag_top_k = activeConfig.config?.rag_top_k || 3;
+      
+      // Update the config
+      const response = await updateLLMConfig(activeConfig.id, {
+        config: {
+          ...activeConfig.config,
+          rag_top_k
+        }
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      setError(null);
+      // Reload data to reflect changes
+      await loadData();
+      // Show success message after data is reloaded
+      alert("RAG configuration updated successfully!");
+    } catch (err) {
+      console.error('Failed to update RAG configuration:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update RAG configuration');
+    }
+  };
 
   // Function to poll for available models
   const pollAvailableModels = async (providerId: string) => {
@@ -368,6 +401,46 @@ const LLMConfiguration = () => {
                   </div>
                   <div>
                     <Button onClick={updateSystemPrompt}>Update System Prompt</Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+            
+            <Card>
+              <div className="p-4">
+                <h3 className="text-lg font-semibold mb-4">RAG Configuration</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Number of RAG Results (top_k)
+                    </label>
+                    <div className="mt-1 flex">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="20"
+                        className="flex-1"
+                        value={(configs.find(c => c.is_active)?.config?.rag_top_k) || 3}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (value >= 1 && value <= 20) {
+                            setConfigs(prevConfigs =>
+                              prevConfigs.map(config =>
+                                config.is_active ?
+                                  {...config, config: {...(config.config || {}), rag_top_k: value}} :
+                                  config
+                              )
+                            );
+                          }
+                        }}
+                      />
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Controls how many relevant documents are retrieved for RAG. Default: 3
+                    </p>
+                  </div>
+                  <div>
+                    <Button onClick={updateRAGConfig}>Update RAG Configuration</Button>
                   </div>
                 </div>
               </div>
