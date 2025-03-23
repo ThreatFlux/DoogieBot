@@ -1,32 +1,38 @@
-# Git
+# Version control
 .git
+.github
 .gitignore
+.gitattributes
 
-# Python
+# Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.pytype/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Virtual environments
+.env
+.venv
 env/
 venv/
 ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
+env.bak/
+venv.bak/
 
-# Node.js
+# Node.js / Frontend
 node_modules/
 npm-debug.log
 yarn-debug.log
@@ -35,34 +41,52 @@ yarn-error.log
 .next/
 out/
 .cache/
-.parcel-cache/
+dist/
+build/
+coverage/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# Development and local files
+*.log
 .DS_Store
-
-# Project specific
-.env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-*.db
-*.sqlite3
+.env.local
 
-# Logs
-logs/
-*.log
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.vs/
 
-# Documentation
+# Documentation and non-essential files
 docs/
 README.md
-
-# Memory bank
+LICENSE
+CHANGELOG.md
 memory-bank/
 
-# Don't ignore these files
-!.env.example
+# Docker related
+.dockerignore
+
+# Testing
+tests/
+test/
+testing/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Specific to this project
+sync-doogie.sh

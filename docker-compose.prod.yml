@@ -3,24 +3,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: production  # Use the production stage for deployment
+      args:
+        - BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        - VERSION=1.0.0
     ports:
       - "3000:3000"  # Frontend
       - "8000:8000"  # Backend API
     volumes:
-      - ./:/app  # Bind mount for production files
-      - /app/frontend/.next  # Don't sync the .next directory (build artifacts)
-      - /app/frontend/node_modules  # Don't sync node_modules
-      - /app/backend/__pycache__  # Don't sync Python cache
+      # Only mount necessary data volumes
+      - ./data:/app/data
     environment:
       - NODE_ENV=production
       - PYTHONPATH=/app
       - FASTAPI_ENV=production
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - SECRET_KEY=${SECRET_KEY:-}  # Required in production
       - ALGORITHM=HS256
       - DISABLE_SQL_LOGS=true
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
-      - FIRST_ADMIN_EMAIL=${FIRST_ADMIN_EMAIL:-admin@example.com}
-      - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD:-change-this-password}
+      - FIRST_ADMIN_EMAIL=${FIRST_ADMIN_EMAIL:-}  # Required in production
+      - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD:-}  # Required in production
       # LLM Service environment variables
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -28,5 +30,21 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
       - LM_STUDIO_BASE_URL=${LM_STUDIO_BASE_URL:-http://localhost:8000}
-    restart: unless-stopped
+    restart: always
     entrypoint: ["/app/entrypoint.prod.sh"]
+    # Production-appropriate resource constraints
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4'
+        reservations:
+          memory: 3G
+          cpus: '2'
+    # More strict healthcheck for production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 40s

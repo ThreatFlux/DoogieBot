@@ -3,11 +3,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: development  # Use the development stage for local development
     ports:
       - "3000:3000"  # Frontend
       - "8000:8000"  # Backend API
     volumes:
-      - ./:/app  # Bind mount for development
+      # Use more specific bind mounts for development
+      - ./backend:/app/backend  # Bind mount for backend development
+      - ./frontend:/app/frontend  # Bind mount for frontend development
+      # Exclude node_modules and build artifacts from host machine
+      - /app/frontend/node_modules
+      - /app/frontend/.next
+      - /app/backend/__pycache__
     environment:
       - NODE_ENV=development
       - PYTHONPATH=/app
@@ -35,5 +42,14 @@ services:
       resources:
         limits:
           memory: 4G
+          cpus: '2'
         reservations:
           memory: 2G
+          cpus: '1'
+    # Add healthcheck
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
