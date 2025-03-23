@@ -282,8 +282,42 @@ class HybridRetriever:
         use_faiss = use_faiss if use_faiss is not None else (self.use_faiss and rag_config.faiss_enabled)
         use_graph = use_graph if use_graph is not None else (self.use_graph and rag_config.graph_enabled)
         
+        # Log the retrieval configuration
+        logger.info(f"Retrieval configuration: BM25={use_bm25}, FAISS={use_faiss}, Graph={use_graph}")
+        
         # Initialize results
         all_results = []
+        
+        # GraphRAG retrieval - try first
+        graph_results = []
+        if use_graph:
+            logger.info("Starting graph retrieval as primary method...")
+            graph_start = time.time()
+            try:
+                # Log the graph RAG status
+                logger.info(f"Graph RAG enabled: {use_graph}, Graph object exists: {self.graph_rag is not None}")
+                if self.graph_rag:
+                    logger.info(f"Graph has {self.graph_rag.get_node_count()} nodes and {self.graph_rag.get_edge_count()} edges")
+                    
+                    # Use the graph's search method directly
+                    try:
+                        logger.info("Attempting to use graph.search() method directly")
+                        direct_graph_results = self.graph_rag.search(
+                            query=query,
+                            max_results=top_k,
+                            fast_mode=fast_mode
+                        )
+                        
+                        if direct_graph_results:
+                            for result in direct_graph_results:
+                                result["source"] = "graph_direct"
+                            all_results.extend(direct_graph_results)
+                            logger.info(f"Direct graph search completed in {time.time() - graph_start:.2f}s, found {len(direct_graph_results)} results")
+                    except Exception as graph_direct_error:
+                        logger.error(f"Error in direct graph search: {str(graph_direct_error)}", exc_info=True)
+                        # Continue with the simplified approach as fallback
+            except Exception as e:
+                logger.error(f"Error in graph retrieval: {str(e)}", exc_info=True)
         
         # BM25 retrieval
         bm25_results = []
@@ -310,15 +344,10 @@ class HybridRetriever:
                 logger.info(f"FAISS retrieval completed in {time.time() - faiss_start:.2f}s, found {len(faiss_results)} results")
             except Exception as e:
                 logger.error(f"Error in FAISS retrieval: {str(e)}")
-        
-        # GraphRAG retrieval - completely skip if we already have enough results from other methods
-        graph_results = []
-        if use_graph and len(all_results) < top_k:
-            graph_start = time.time()
-            try:
-                # Use a simpler, more reliable approach for graph search
-                # Instead of using the complex graph search, we'll do a simple keyword search on the graph nodes
-                logger.info("Using simplified graph search to avoid memory issues")
+                # We've already tried the direct graph search method at the beginning
+                # If we're here, it means the direct method failed or didn't find results
+                # Let's try a simpler approach as fallback
+                logger.info("Using Graph RAG with simplified search as fallback")
                 
                 # Get a sample of nodes from the graph
                 import random
@@ -356,7 +385,7 @@ class HybridRetriever:
                                 'type': node_data.get('type'),
                                 'score': score,
                                 'metadata': node_data.get('metadata', {}),
-                                'source': 'graph'
+                                'source': 'graph_fallback'
                             })
                     
                     # Sort by score and limit
@@ -370,11 +399,11 @@ class HybridRetriever:
                 # Process results if we got any
                 if graph_results:
                     all_results.extend(graph_results)
-                    logger.info(f"Simplified graph retrieval completed in {time.time() - graph_start:.2f}s, found {len(graph_results)} results")
+                    logger.info(f"Graph RAG fallback retrieval completed in {time.time() - graph_start:.2f}s, found {len(graph_results)} results")
                 else:
-                    logger.warning("No results from simplified graph search")
+                    logger.warning("No results from graph RAG fallback search")
             except Exception as e:
-                logger.error(f"Error in graph retrieval: {str(e)}")
+                logger.error(f"Error in graph retrieval: {str(e)}", exc_info=True)
                 # Continue with other results even if graph search fails
         
         # Rerank results if needed
@@ -400,14 +429,21 @@ class HybridRetriever:
         # Limit to top_k
         final_results = all_results[:top_k]
         
+        # Log source distribution in all results before limiting
+        all_source_counts = {}
+        for result in all_results:
+            source = result.get("source", "unknown")
+            all_source_counts[source] = all_source_counts.get(source, 0) + 1
+        
         # Log source distribution in final results
-        source_counts = {}
+        final_source_counts = {}
         for result in final_results:
             source = result.get("source", "unknown")
-            source_counts[source] = source_counts.get(source, 0) + 1
+            final_source_counts[source] = final_source_counts.get(source, 0) + 1
         
         total_time = time.time() - start_time
-        logger.info(f"Total retrieval completed in {total_time:.2f}s. Final results: {len(final_results)} ({source_counts})")
+        logger.info(f"All results before limiting: {len(all_results)} ({all_source_counts})")
+        logger.info(f"Total retrieval completed in {total_time:.2f}s. Final results: {len(final_results)} ({final_source_counts})")
         
         return final_results
     

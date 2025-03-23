@@ -28,8 +28,13 @@ start_backend() {
 start_frontend() {
     echo "Starting frontend server..."
     cd /app/frontend
+    # Install frontend dependencies if needed
+    if [ ! -d "node_modules" ] || [ ! -d "node_modules/.bin" ]; then
+        echo "Installing frontend dependencies..."
+        pnpm install
+    fi
     # Use the --turbo flag for faster refresh and add NODE_OPTIONS to increase memory limit
-    NODE_OPTIONS="--max_old_space_size=4096" npm run dev -- --turbo &
+    NODE_OPTIONS="--max_old_space_size=4096" pnpm dev --turbo &
     FRONTEND_PID=$!
     echo "Frontend server started with PID: $FRONTEND_PID"
 }
