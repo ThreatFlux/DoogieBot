@@ -364,17 +364,26 @@ class LLMService:
                 context_documents=[doc["id"] for doc in context_documents] if context_documents else None
             )
     
-    async def _get_rag_context(self, query: str, top_k: int = 3) -> Optional[List[Dict[str, Any]]]:
+    async def _get_rag_context(self, query: str, top_k: Optional[int] = None) -> Optional[List[Dict[str, Any]]]:
         """
         Get relevant context for RAG.
         
         Args:
             query: User query
-            top_k: Number of results to return
+            top_k: Number of results to return (optional, uses config value if not provided)
             
         Returns:
             List of relevant documents or None if no results
         """
+        # Get top_k from config if not provided
+        if top_k is None:
+            # Check if there's a top_k value in the active config
+            active_config = LLMConfigService.get_active_config(self.db)
+            if active_config and active_config.config and 'rag_top_k' in active_config.config:
+                top_k = active_config.config.get('rag_top_k')
+            else:
+                # Default to 3 if not configured
+                top_k = 3
         try:
             # Generate query embedding using the LLM client
             logger.info(f"Generating embedding for query: {query[:50]}...")
