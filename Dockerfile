@@ -130,7 +130,7 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.vendor="TOoSmOotH" \
       org.opencontainers.image.title="doogie-chat" \
-      org.opencontainers.image.description="DoogieChat application for Security Onion"
+      org.opencontainers.image.description="DoogieBot"
 
 # Set working directory
 WORKDIR /app
