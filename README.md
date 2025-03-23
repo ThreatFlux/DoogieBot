@@ -1,4 +1,4 @@
-# Security Onion Chatbot
+# DoogieBot
 
 This project is a chatbot application built with Next.js (frontend) and FastAPI (backend). It allows users to interact with documents and a Large Language Model (LLM). The project initially focused on addressing markdown formatting issues in chatbot responses but has evolved into a full-fledged application.
 
