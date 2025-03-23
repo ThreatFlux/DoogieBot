@@ -21,8 +21,9 @@ services:
       - ALGORITHM=HS256
       - DISABLE_SQL_LOGS=true
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
-      - FIRST_ADMIN_EMAIL=${FIRST_ADMIN_EMAIL:-}  # Required in production
-      - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD:-}  # Required in production
+      # Admin credentials are now optional
+      - FIRST_ADMIN_EMAIL=${FIRST_ADMIN_EMAIL:-}
+      - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD:-}
       # LLM Service environment variables
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

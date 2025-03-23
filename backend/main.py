@@ -75,15 +75,18 @@ async def startup_initialization():
     # Get DB session
     db = next(get_db())
     
-    # Create first admin user
-    admin_email = settings.FIRST_ADMIN_EMAIL
-    admin_password = settings.FIRST_ADMIN_PASSWORD
-    
-    admin_user = UserService.create_first_admin(db, admin_email, admin_password)
-    if admin_user:
-        print(f"Created first admin user: {admin_email}")
+    # Create first admin user if credentials are provided
+    if settings.FIRST_ADMIN_EMAIL and settings.FIRST_ADMIN_PASSWORD:
+        admin_email = settings.FIRST_ADMIN_EMAIL
+        admin_password = settings.FIRST_ADMIN_PASSWORD
+        
+        admin_user = UserService.create_first_admin(db, admin_email, admin_password)
+        if admin_user:
+            print(f"Created first admin user: {admin_email}")
+        else:
+            print("Admin user already exists, skipping creation")
     else:
-        print("Admin user already exists, skipping creation")
+        print("Admin credentials not provided, skipping admin user creation")
     
     # Create default LLM configuration if needed
     default_config = LLMConfigService.create_default_config_if_needed(db)
