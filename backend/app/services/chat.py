@@ -9,12 +9,13 @@ class ChatService:
     def create_chat(db: Session, user_id: str, title: Optional[str] = None) -> Chat:
         """
         Create a new chat for a user.
+        If no title is provided, uses 'New Conversation' as default.
         """
         chat_id = str(uuid.uuid4())
         chat = Chat(
             id=chat_id,
             user_id=user_id,
-            title=title or "New Chat"
+            title=title or "New Conversation"
         )
         db.add(chat)
         db.commit()

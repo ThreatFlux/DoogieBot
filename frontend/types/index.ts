@@ -23,6 +23,10 @@ export interface UserUpdate {
 }
 
 // Authentication Types
+export interface LoginOptions {
+  rememberMe: boolean;
+}
+
 export interface Token {
   access_token: string;
   refresh_token: string;
@@ -43,6 +47,13 @@ export interface Chat {
   created_at: string;
   updated_at: string;
   messages: Message[];
+  tags?: string[];
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export interface Message {
@@ -59,6 +70,7 @@ export interface Message {
   feedback_text?: string;
   reviewed?: boolean;
   context_documents?: string[];
+  document_ids?: string[]; // Add this field for document references
 }
 
 export interface Feedback {
@@ -197,6 +209,7 @@ export type Theme = 'dark' | 'light';
 export interface ApiResponse<T> {
   data?: T;
   error?: string;
+  errorObject?: any;
 }
 
 // Pagination Types

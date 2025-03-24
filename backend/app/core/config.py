@@ -13,7 +13,7 @@ logging.basicConfig(
 # Configure SQLAlchemy logging separately
 sqlalchemy_logger = logging.getLogger('sqlalchemy.engine')
 sqlalchemy_logger.setLevel(
-    logging.INFO if os.getenv("DISABLE_SQL_LOGS", "false").lower() == "true" else None
+    logging.INFO if os.getenv("DISABLE_SQL_LOGS", "false").lower() == "true" else logging.DEBUG
 )
 
 class Settings(BaseSettings):
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     LLM_DEBUG_LOGGING: bool = os.getenv("LLM_DEBUG_LOGGING", "false").lower() == "true"
     
     # CORS settings
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    BACKEND_CORS_ORIGINS: List[Union[str, AnyHttpUrl]] = ["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:3000", "http://127.0.0.1:8000", "*"]
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:

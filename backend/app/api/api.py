@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import auth, users, chats, documents, rag, llm
+from app.api.routes import auth, users, chats, documents, rag, llm, tags
 
 api_router = APIRouter()
 
@@ -15,3 +15,4 @@ api_router.include_router(chats.router, prefix="/chats", tags=["chats"])
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(rag.router, prefix="/rag", tags=["rag"])
 api_router.include_router(llm.router, prefix="/llm", tags=["llm"])
+api_router.include_router(tags.router, prefix="/tags", tags=["tags"])

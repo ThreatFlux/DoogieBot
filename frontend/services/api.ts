@@ -1,29 +1,31 @@
 import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ApiResponse, PaginatedResponse, PaginationParams, Token } from '@/types';
+import { createAppError, handleError, isAuthError, ErrorCategory, AppError } from '@/utils/errorHandling';
 import { jwtDecode } from 'jwt-decode';
 
 // Define API base URL constants
-export const API_BASE_URL = '/api/v1';
-export const API_STREAM_URL = '/v1';
+export const API_BASE_URL = '/api/v1'; // Full path with version
+export const API_STREAM_URL = '/api/v1'; // Same path for stream URLs
 
 // Create axios instance with base configuration
 const api = axios.create({
   headers: {
-    'Content-Type': 'application/json',
-  },
+    'Content-Type': 'application/json'
+  }
 });
 
 // Helper function to get the correct URL for different types of requests
 export const getApiUrl = (path: string, useBaseUrl = true): string => {
-  // Add leading slash if missing
+  // Create the normalized path (with leading slash but NO trailing slash)
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const cleanPath = normalizedPath.endsWith('/') ? normalizedPath.slice(0, -1) : normalizedPath;
   
   if (useBaseUrl) {
-    // Regular API requests through axios - use /api prefix
-    return `${API_BASE_URL}${normalizedPath}`;
+    // Regular API requests through axios - use full API path
+    return `${API_BASE_URL}${cleanPath}`;
   } else {
-    // Direct requests (like EventSource) - use /v1 prefix
-    return `${API_STREAM_URL}${normalizedPath}`;
+    // Direct requests (like EventSource) - use full API path
+    return `${API_STREAM_URL}${cleanPath}`;
   }
 };
 
@@ -48,10 +50,10 @@ const processQueue = (error: any = null, token: string | null = null) => {
 // Function to refresh the token
 const refreshToken = async (): Promise<string | null> => {
   try {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) {
-      return null;
-    }
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+  return null;
+  }
     
     const refreshUrl = getApiUrl('/auth/refresh');
     console.log('Refreshing token at:', refreshUrl);
@@ -100,7 +102,7 @@ api.interceptors.request.use(
       headers: config.headers
     });
     
-    const token = localStorage.getItem('token');
+    const token = getToken();
     
     if (token) {
       // Check if token is expired and needs refreshing
@@ -238,13 +240,52 @@ api.interceptors.response.use(
   }
 );
 
-// Helper for handling API errors
-const handleApiError = (error: any): ApiResponse<any> => {
-  const axiosError = error as AxiosError;
-  if (axiosError.response?.data && typeof axiosError.response.data === 'object' && 'detail' in axiosError.response.data) {
-    return { error: axiosError.response.data.detail as string };
+// Helper for handling API errors with our centralized error handling utility
+const handleApiError = (error: any, apiPath: string): ApiResponse<any> => {
+  // Check for network errors
+  if (axios.isAxiosError(error) && !error.response) {
+    // This is likely a network error (no response from server)
+    console.error('Network error detected:', error.message);
+    return {
+      error: 'Please check your internet connection and try again',
+      errorObject: {
+        message: error.message,
+        category: 'network',
+        detail: 'Connection failed',
+        source: `API:${apiPath}`,
+        timestamp: new Date(),
+        originalError: error
+      }
+    };
   }
-  return { error: axiosError.message };
+  
+  const appError = createAppError(error, `API:${apiPath}`, {
+    url: apiPath,
+    method: error.config?.method,
+    data: error.config?.data
+  });
+  
+  // Log the error
+  console.error('API Error:', appError);
+  
+  // Handle authentication errors (token expired or invalid)
+  if (isAuthError(appError) && typeof window !== 'undefined') {
+    // Don't redirect if we're already on the login page or trying to refresh
+    const isLoginPage = window.location.pathname === '/login';
+    const isRefreshing = appError.context?.url?.includes('/auth/refresh');
+    
+    if (!isLoginPage && !isRefreshing) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      window.location.href = '/login';
+    }
+  }
+  
+  // Return a standardized error response
+  return { 
+    error: appError.detail || appError.message,
+    errorObject: appError
+  };
 };
 
 // Generic GET request
@@ -255,15 +296,23 @@ export const get = async <T>(
 ): Promise<ApiResponse<T>> => {
   try {
     const url = getApiUrl(path);
-    console.log('GET request to:', url);
+    
+    console.log('GET request details:', {
+      url,
+      params,
+      authToken: localStorage.getItem('token') ? 'Present' : 'Missing',
+      config
+    });
+    
     const response: AxiosResponse<T> = await api.get(url, { ...config, params });
+    console.log('GET response status:', response.status);
     return { data: response.data };
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, path);
   }
 };
 
-// Generic POST request
+  // Generic POST request
 export const post = async <T>(
   path: string,
   data?: any,
@@ -271,12 +320,19 @@ export const post = async <T>(
 ): Promise<ApiResponse<T>> => {
   try {
     const url = getApiUrl(path);
-    console.log('POST request to:', url, 'with data:', data);
+    
+    console.log('POST request details:', {
+      url,
+      data,
+      authToken: localStorage.getItem('token') ? 'Present' : 'Missing',
+      config
+    });
+    
     const response: AxiosResponse<T> = await api.post(url, data, config);
+    console.log('POST response:', response.status, response.statusText);
     return { data: response.data };
   } catch (error) {
-    console.error('POST error:', error);
-    return handleApiError(error);
+    return handleApiError(error, path);
   }
 };
 
@@ -288,11 +344,19 @@ export const put = async <T>(
 ): Promise<ApiResponse<T>> => {
   try {
     const url = getApiUrl(path);
-    console.log('PUT request to:', url);
+    
+    console.log('PUT request details:', {
+      url,
+      data,
+      authToken: localStorage.getItem('token') ? 'Present' : 'Missing',
+      config
+    });
+    
     const response: AxiosResponse<T> = await api.put(url, data, config);
+    console.log('PUT response status:', response.status);
     return { data: response.data };
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, path);
   }
 };
 
@@ -303,11 +367,18 @@ export const del = async <T>(
 ): Promise<ApiResponse<T>> => {
   try {
     const url = getApiUrl(path);
-    console.log('DELETE request to:', url);
+    
+    console.log('DELETE request details:', {
+      url,
+      authToken: localStorage.getItem('token') ? 'Present' : 'Missing',
+      config
+    });
+    
     const response: AxiosResponse<T> = await api.delete(url, config);
+    console.log('DELETE response status:', response.status);
     return { data: response.data };
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, path);
   }
 };
 
@@ -330,30 +401,54 @@ export const getPaginated = async <T>(
     });
     return { data: response.data };
   } catch (error) {
-    return handleApiError(error);
+    return handleApiError(error, path);
   }
 };
 
-// Function to set tokens in localStorage
-export const setToken = (token: Token): void => {
-  localStorage.setItem('token', token.access_token);
-  localStorage.setItem('refreshToken', token.refresh_token);
+// Function to set tokens in storage (localStorage or sessionStorage)
+export const setToken = (token: Token, rememberMe = false): void => {
+  const storage = rememberMe ? localStorage : sessionStorage;
+  storage.setItem('token', token.access_token);
+  storage.setItem('refreshToken', token.refresh_token);
+  
+  // Store the storage preference
+  localStorage.setItem('tokenStorage', rememberMe ? 'local' : 'session');
 };
 
-// Function to get access token from localStorage
+// Function to get access token from storage
 export const getToken = (): string | null => {
-  return localStorage.getItem('token');
+  // First check if token exists in localStorage
+  let token = localStorage.getItem('token');
+  
+  // If not found in localStorage, check sessionStorage
+  if (!token) {
+    token = sessionStorage.getItem('token');
+  }
+  
+  return token;
 };
 
-// Function to get refresh token from localStorage
+// Function to get refresh token from storage
 export const getRefreshToken = (): string | null => {
-  return localStorage.getItem('refreshToken');
+  // First check if refresh token exists in localStorage
+  let refreshToken = localStorage.getItem('refreshToken');
+  
+  // If not found in localStorage, check sessionStorage
+  if (!refreshToken) {
+    refreshToken = sessionStorage.getItem('refreshToken');
+  }
+  
+  return refreshToken;
 };
 
-// Function to remove tokens from localStorage
+// Function to remove tokens from storage
 export const removeToken = (): void => {
+  // Remove from both to be safe
   localStorage.removeItem('token');
   localStorage.removeItem('refreshToken');
+  sessionStorage.removeItem('token');
+  sessionStorage.removeItem('refreshToken');
+  localStorage.removeItem('tokenStorage');
 };
 
 export default api;

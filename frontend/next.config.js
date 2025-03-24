@@ -22,12 +22,16 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
-        destination: 'http://0.0.0.0:8000/api/:path*', // Proxy regular API requests
+        source: '/api/v1/:path*',
+        destination: 'http://localhost:8000/api/v1/:path*', // Proxy regular API requests (changed to localhost)
+      },
+      {
+        source: '/api/v1/:path*/',
+        destination: 'http://localhost:8000/api/v1/:path*/', // Handle trailing slashes
       },
       {
         source: '/v1/:path*',
-        destination: 'http://0.0.0.0:8000/api/v1/:path*', // Proxy EventSource requests
+        destination: 'http://localhost:8000/api/v1/:path*', // Proxy EventSource requests
       },
     ];
   },

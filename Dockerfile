@@ -1,9 +1,10 @@
 # Stage 0: Base image
 FROM python:3.12-slim AS base
 
-# Build arguments
-ARG USER=doogie
-ARG UID=10001
+# User configuration with defaults
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+ARG USER_NAME=appuser
 
 # Install minimal system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN groupadd -g ${UID} ${USER} && \
-    useradd -u ${UID} -g ${USER} -s /bin/bash -m ${USER} && \
+# Create non-root user with configurable UID/GID
+RUN groupadd -g ${GROUP_ID} ${USER_NAME} && \
+    useradd -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash -m ${USER_NAME} && \
     mkdir -p /app && \
-    chown -R ${USER}:${USER} /app
+    chown -R ${USER_ID}:${GROUP_ID} /app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -63,7 +64,7 @@ RUN mv /app/frontend/node_modules /tmp/node_modules
 
 # Copy frontend code (will respect .dockerignore for node_modules)
 WORKDIR /app
-COPY --chown=doogie:doogie frontend/ /app/frontend/
+COPY frontend/ /app/frontend/
 
 # Restore node_modules
 RUN rm -rf /app/frontend/node_modules && \
@@ -117,9 +118,21 @@ COPY entrypoint.prod.sh /app/
 RUN chmod +x /app/entrypoint.sh && \
     chmod +x /app/entrypoint.prod.sh
 
+# Ensure directories exist with correct permissions
+RUN mkdir -p /app/frontend/node_modules /app/frontend/.next && \
+    mkdir -p /app/.pnpm-store && \
+    chown -R ${USER_ID}:${GROUP_ID} /app
+
 # Environment variables for development
 ENV NODE_ENV=development \
-    FASTAPI_ENV=development
+    FASTAPI_ENV=development \
+    PNPM_HOME=".local/share/pnpm"
+
+# Add pnpm to PATH
+ENV PATH="${PNPM_HOME}:${PATH}"
+
+# Switch to configured user
+USER ${USER_ID}:${GROUP_ID}
 
 # Development-specific command
 CMD ["/app/entrypoint.sh"]
@@ -134,11 +147,11 @@ ARG VERSION=1.0.0
 # Add metadata with correct author information
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.authors="Mike Reeves" \
-      org.opencontainers.image.url="https://github.com/TOoSmOotH/doogie-chat" \
-      org.opencontainers.image.source="https://github.com/TOoSmOotH/doogie-chat" \
+      org.opencontainers.image.url="https://github.com/TOoSmOotH/DoogieBot" \
+      org.opencontainers.image.source="https://github.com/TOoSmOotH/DoogieBot" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.vendor="TOoSmOotH" \
-      org.opencontainers.image.title="doogie-chat" \
+      org.opencontainers.image.title="DoogieBot" \
       org.opencontainers.image.description="DoogieBot"
 
 # Set working directory
@@ -166,11 +179,7 @@ COPY backend/ /app/backend/
 
 # Copy entrypoint scripts
 COPY entrypoint.prod.sh /app/
-RUN chmod +x /app/entrypoint.prod.sh && \
-    chown -R ${USER}:${USER} /app
-
-# Switch to non-root user
-USER ${USER}
+RUN chmod +x /app/entrypoint.prod.sh  
 
 # Environment variables for production
 ENV NODE_ENV=production \
@@ -182,6 +191,9 @@ HEALTHCHECK --interval=5m --timeout=3s \
 
 # Expose ports
 EXPOSE 3000 8000
+
+# Switch to configured user
+USER ${USER_ID}:${GROUP_ID}
 
 # Run the application
 ENTRYPOINT ["/app/entrypoint.prod.sh"]

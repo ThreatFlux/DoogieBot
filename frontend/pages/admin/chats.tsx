@@ -5,7 +5,6 @@ import { Card } from '@/components/ui/Card';
 import { getFlaggedChats, deleteChat } from '@/services/chat';
 import withAdmin from '@/utils/withAdmin';
 import { Chat, Message } from '@/types';
-import { PaginatedResponse } from '@/types';
 
 const ChatReview = () => {
   const [chats, setChats] = useState<Chat[]>([]);

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 import os
+import logging
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.db.base import get_db
@@ -10,6 +11,8 @@ from app.core.config import settings
 from app.services.user import UserService
 from app.services.llm_config import LLMConfigService
 from app.rag.singleton import rag_singleton
+from app.utils.middleware import TrailingSlashMiddleware
+from contextlib import asynccontextmanager
 
 # Create the app directory if it doesn't exist
 app_dir = Path(__file__).parent / "app"
@@ -19,57 +22,12 @@ app_dir.mkdir(exist_ok=True)
 uploads_dir = Path(__file__).parent.parent / "uploads"
 uploads_dir.mkdir(exist_ok=True)
 
-# Create the FastAPI app
-app = FastAPI(
-    title="Doogie Chat Bot API",
-    description="API for Doogie Chat Bot with Hybrid RAG system",
-    version="0.1.0",
-)
-
-# Add CORS middleware with environment-specific configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
-)
-
-# Root endpoint
-@app.get("/")
-async def root():
-    return {"message": "Welcome to Doogie Chat Bot API"}
-
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
-
-# Include API router
-from app.api.api import api_router
-app.include_router(api_router, prefix=settings.API_V1_STR)
-
-# Error handlers
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "Internal server error"},
-    )
-
 # Global flag to track if RAG singleton has been initialized
 _rag_initialized = False
 
-# Startup event to create first admin user and default LLM configuration
-@app.on_event("startup")
-async def startup_initialization():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic (before yield)
     global _rag_initialized
     
     # Get DB session
@@ -109,6 +67,66 @@ async def startup_initialization():
             print(f"Error initializing RAG singleton: {str(e)}")
     else:
         print("RAG singleton already initialized by another worker")
+    
+    yield  # This is where the app runs
+    
+    # Shutdown logic (after yield)
+    # Add any cleanup code here if needed
+
+# Create the FastAPI app
+app = FastAPI(
+    title="Doogie Chat Bot API",
+    description="API for Doogie Chat Bot with Hybrid RAG system",
+    version="0.1.0",
+    # Disable automatic redirects for trailing slashes
+    # This ensures URLs work consistently with or without trailing slashes
+    redirect_slashes=False,
+    # Add the lifespan context manager
+    lifespan=lifespan,
+)
+
+# Add middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
+
+# Add trailing slash middleware
+app.add_middleware(TrailingSlashMiddleware)
+
+# Root endpoint
+@app.get("/")
+async def root():
+    return {"message": "Welcome to Doogie Chat Bot API"}
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+# Include API router
+from app.api.api import api_router
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Error handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    logging.error(f"HTTP error: {exc.status_code} - {exc.detail} - Path: {request.url.path}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    logging.error(f"Unhandled exception: {str(exc)} - Path: {request.url.path}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error"},
+    )
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

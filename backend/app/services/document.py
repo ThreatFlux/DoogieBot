@@ -309,22 +309,23 @@ class DocumentService:
         result = db.query(DocumentChunk).filter(DocumentChunk.document_id == doc_id).delete()
         db.commit()
         return result
-@staticmethod
-def delete_all_chunks(db: Session) -> int:
-    """
-    Delete all document chunks from the database. Returns the number of chunks deleted.
-    """
-    try:
-        result = db.query(DocumentChunk).delete()
-        db.commit()
-        return result
-    except Exception as e:
-        db.rollback()
-        raise e
         
-    
     @staticmethod
+    def delete_all_chunks(db: Session) -> int:
+        """
+        Delete all document chunks from the database. Returns the number of chunks deleted.
+        """
+        try:
+            result = db.query(DocumentChunk).delete()
+            db.commit()
+            return result
+        except Exception as e:
+            db.rollback()
+            raise e
+    
+    @classmethod
     async def import_github_repository(
+        cls,
         db: Session,
         repo_url: str,
         branch: str,
