@@ -117,9 +117,21 @@ COPY entrypoint.prod.sh /app/
 RUN chmod +x /app/entrypoint.sh && \
     chmod +x /app/entrypoint.prod.sh
 
+# Ensure directories exist with correct permissions
+RUN mkdir -p /app/frontend/node_modules /app/frontend/.next && \
+    mkdir -p /app/.pnpm-store && \
+    chown -R ${USER}:${USER} /app
+
 # Environment variables for development
 ENV NODE_ENV=development \
-    FASTAPI_ENV=development
+    FASTAPI_ENV=development \
+    PNPM_HOME="/home/${USER}/.local/share/pnpm"
+
+# Add pnpm to PATH
+ENV PATH="${PNPM_HOME}:${PATH}"
+
+# Switch to non-root user for development
+USER ${USER}
 
 # Development-specific command
 CMD ["/app/entrypoint.sh"]

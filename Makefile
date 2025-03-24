@@ -1,4 +1,4 @@
-.PHONY: all clean install dev lint docker-lint format docker-format test docker-test security-check docker-security-check docker-build docker-up docker-down docker-up-prod help migrate frontend-build frontend-dev backend-dev generate-docs sync
+.PHONY: all clean install dev lint docker-lint format docker-format test docker-test security-check docker-security-check docker-build docker-up docker-down docker-up-prod help migrate frontend-build frontend-dev backend-dev generate-docs sync fix-permissions fix-docker fix-all
 
 # Default target
 all: install lint test
@@ -33,6 +33,24 @@ YELLOW = \033[0;33m
 RED = \033[0;31m
 NC = \033[0m # No Color
 
+# Fix permissions for Docker volumes
+fix-permissions:
+	@echo "${YELLOW}Fixing permissions for Docker volumes...${NC}"
+	@chmod +x ./fix-permissions.sh
+	@./scripts/fix-permissions.sh
+
+# Fix Docker Compose formatting issues
+fix-docker:
+	@echo "${YELLOW}Fixing Docker Compose file formatting...${NC}"
+	@chmod +x ./fix-docker-compose.sh
+	@./scripts/fix-docker-compose.sh
+
+# Fix all Docker environment issues
+fix-all:
+	@echo "${YELLOW}Fixing all Docker environment issues...${NC}"
+	@chmod +x ./fix-all.sh
+	@./fix-all.sh
+
 # Help target
 help:
 	@echo "${GREEN}Security Onion Chatbot Makefile${NC}"
@@ -40,6 +58,9 @@ help:
 	@echo "${YELLOW}Available targets:${NC}"
 	@echo " ${GREEN}all${NC}             : Install dependencies, run linters, and tests"
 	@echo " ${GREEN}clean${NC}           : Clean up build artifacts, caches, and virtual environment"
+	@echo " ${GREEN}fix-permissions${NC} : Fix permissions for Docker volumes"
+	@echo " ${GREEN}fix-docker${NC}      : Fix Docker Compose file formatting issues"
+	@echo " ${GREEN}fix-all${NC}         : Fix all Docker environment issues"
 	@echo " ${GREEN}install${NC}         : Install backend and frontend dependencies"
 	@echo " ${GREEN}dev${NC}             : Start development environment with Docker"
 	@echo " ${GREEN}lint${NC}            : Run linters locally using virtual environment"

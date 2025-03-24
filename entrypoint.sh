@@ -24,16 +24,37 @@ start_backend() {
     echo "Backend server started with PID: $BACKEND_PID"
 }
 
+# Function to prepare frontend dependencies
+prepare_frontend() {
+    cd /app/frontend
+    
+    # Configure pnpm to use a specific store directory with proper permissions
+    echo "Configuring pnpm store..."
+    pnpm config set store-dir /app/.pnpm-store
+    
+    # Check if we have write permissions
+    if [ ! -w "." ] || [ ! -w "/app/.pnpm-store" ]; then
+        echo "Warning: Permission issues detected. Attempting to fix..."
+        mkdir -p node_modules .next
+    fi
+    
+    # Install frontend dependencies if needed
+    if [ ! -d "node_modules/.bin" ]; then
+        echo "Installing frontend dependencies..."
+        # Use --shamefully-hoist for better compatibility in Docker
+        # Use --no-strict-peer-dependencies to avoid peer dependency issues
+        pnpm install --shamefully-hoist --no-strict-peer-dependencies
+    else
+        echo "Frontend dependencies already installed."
+    fi
+}
+
 # Function to start the frontend
 start_frontend() {
     echo "Starting frontend server..."
     cd /app/frontend
-    # Install frontend dependencies if needed
-    if [ ! -d "node_modules" ] || [ ! -d "node_modules/.bin" ]; then
-        echo "Installing frontend dependencies..."
-        pnpm install
-    fi
-    # Use the --turbo flag for faster refresh and add NODE_OPTIONS to increase memory limit
+    
+    # Start Next.js development server with turbo mode
     NODE_OPTIONS="--max_old_space_size=4096" pnpm dev --turbo &
     FRONTEND_PID=$!
     echo "Frontend server started with PID: $FRONTEND_PID"
@@ -41,6 +62,9 @@ start_frontend() {
 
 # Run migrations
 run_migrations
+
+# Prepare frontend before starting services
+prepare_frontend
 
 # Start services
 start_backend
