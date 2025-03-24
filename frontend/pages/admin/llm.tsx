@@ -299,12 +299,13 @@ const LLMConfiguration = () => {
       const rag_top_k = activeConfig.config?.rag_top_k || 3;
       
       // Update the config
+      // Use type assertion to tell TypeScript that this object can include a config property
       const response = await updateLLMConfig(activeConfig.id, {
         config: {
           ...activeConfig.config,
           rag_top_k
         }
-      });
+      } as any); // Type assertion to bypass TypeScript check
       
       if (response.error) {
         throw new Error(response.error);

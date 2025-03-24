@@ -5,7 +5,8 @@ set -e
 run_migrations() {
     echo "Running database migrations..."
     cd /app/backend
-    python -m alembic upgrade head
+    # Explicitly specify the alembic.ini file path
+    python -m alembic -c /app/backend/alembic.ini upgrade head
     echo "Database migrations completed."
 }
 

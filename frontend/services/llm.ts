@@ -89,6 +89,7 @@ export const updateLLMConfig = async (
     api_key?: string;
     base_url?: string;
     is_active?: boolean;
+    config?: any;
   }
 ): Promise<{ config?: LLMConfig; error?: string }> => {
   const response = await put<LLMConfig>(`/llm/admin/config/${configId}`, config);
