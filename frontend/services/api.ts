@@ -50,10 +50,10 @@ const processQueue = (error: any = null, token: string | null = null) => {
 // Function to refresh the token
 const refreshToken = async (): Promise<string | null> => {
   try {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) {
-      return null;
-    }
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+  return null;
+  }
     
     const refreshUrl = getApiUrl('/auth/refresh');
     console.log('Refreshing token at:', refreshUrl);
@@ -102,7 +102,7 @@ api.interceptors.request.use(
       headers: config.headers
     });
     
-    const token = localStorage.getItem('token');
+    const token = getToken();
     
     if (token) {
       // Check if token is expired and needs refreshing
@@ -417,20 +417,28 @@ export const setToken = (token: Token, rememberMe = false): void => {
 
 // Function to get access token from storage
 export const getToken = (): string | null => {
-  // Check which storage to use
-  const storageType = localStorage.getItem('tokenStorage') || 'local';
-  const storage = storageType === 'local' ? localStorage : sessionStorage;
+  // First check if token exists in localStorage
+  let token = localStorage.getItem('token');
   
-  return storage.getItem('token');
+  // If not found in localStorage, check sessionStorage
+  if (!token) {
+    token = sessionStorage.getItem('token');
+  }
+  
+  return token;
 };
 
 // Function to get refresh token from storage
 export const getRefreshToken = (): string | null => {
-  // Check which storage to use
-  const storageType = localStorage.getItem('tokenStorage') || 'local';
-  const storage = storageType === 'local' ? localStorage : sessionStorage;
+  // First check if refresh token exists in localStorage
+  let refreshToken = localStorage.getItem('refreshToken');
   
-  return storage.getItem('refreshToken');
+  // If not found in localStorage, check sessionStorage
+  if (!refreshToken) {
+    refreshToken = sessionStorage.getItem('refreshToken');
+  }
+  
+  return refreshToken;
 };
 
 // Function to remove tokens from storage

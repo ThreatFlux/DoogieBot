@@ -59,6 +59,8 @@ export const login = async (email: string, password: string, options?: LoginOpti
     console.log('User response:', userResponse);
     
     if (userResponse.error) {
+      // If error, clean up tokens to avoid half-authenticated state
+      removeToken();
       return { error: userResponse.error };
     }
     
