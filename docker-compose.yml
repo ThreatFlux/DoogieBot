@@ -57,4 +57,4 @@ services:
       start_period: 40s
 
 volumes:
-  pnpm-store:  # Define named volume for persistent pnpm store
+  pnpm-store: {}  # Define named volume for persistent pnpm store with empty config

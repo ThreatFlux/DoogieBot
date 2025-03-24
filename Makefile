@@ -36,20 +36,20 @@ NC = \033[0m # No Color
 # Fix permissions for Docker volumes
 fix-permissions:
 	@echo "${YELLOW}Fixing permissions for Docker volumes...${NC}"
-	@chmod +x ./fix-permissions.sh
+	@chmod +x ./scripts/fix-permissions.sh
 	@./scripts/fix-permissions.sh
 
 # Fix Docker Compose formatting issues
 fix-docker:
 	@echo "${YELLOW}Fixing Docker Compose file formatting...${NC}"
-	@chmod +x ./fix-docker-compose.sh
+	@chmod +x ./scripts/fix-docker-compose.sh
 	@./scripts/fix-docker-compose.sh
 
 # Fix all Docker environment issues
 fix-all:
 	@echo "${YELLOW}Fixing all Docker environment issues...${NC}"
-	@chmod +x ./fix-all.sh
-	@./fix-all.sh
+	@chmod +x ./scripts/fix-all.sh
+	@./scripts/fix-all.sh
 
 # Help target
 help:
