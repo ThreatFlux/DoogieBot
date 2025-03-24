@@ -125,7 +125,7 @@ RUN mkdir -p /app/frontend/node_modules /app/frontend/.next && \
 # Environment variables for development
 ENV NODE_ENV=development \
     FASTAPI_ENV=development \
-    PNPM_HOME="/home/${USER}/.local/share/pnpm"
+    PNPM_HOME=".local/share/pnpm"
 
 # Add pnpm to PATH
 ENV PATH="${PNPM_HOME}:${PATH}"
