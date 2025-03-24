@@ -1,4 +1,4 @@
-import { Token, User, UserCreate } from '@/types';
+import { Token, User, UserCreate, LoginOptions } from '@/types';
 import { get, post, setToken, removeToken, getRefreshToken, API_BASE_URL } from './api';
 
 // Transform backend user response to frontend user format
@@ -14,7 +14,7 @@ const transformUser = (backendUser: any): User => ({
 });
 
 // Login user
-export const login = async (email: string, password: string): Promise<{ user?: User; error?: string }> => {
+export const login = async (email: string, password: string, options?: LoginOptions): Promise<{ user?: User; error?: string }> => {
   const formData = new URLSearchParams();
   formData.append('username', email);
   formData.append('password', password);
@@ -22,27 +22,48 @@ export const login = async (email: string, password: string): Promise<{ user?: U
   try {
     // Use the post function which now has special handling for auth endpoints
     console.log('Attempting login with:', email);
-    
-    const response = await post<Token>('/auth/login', formData, {
+    console.log('Remember me:', options?.rememberMe || false);
+
+    // Important: Don't add trailing slash for login since backend expects exact path
+    const loginPath = '/auth/login'; // Don't normalize this path
+    const url = `${API_BASE_URL}${loginPath}`; // Manually construct URL
+
+    console.log('Login URL:', url);
+    console.log('Form data:', Object.fromEntries(formData));
+
+    // Use direct axios call to bypass our API layer's automatic trailing slash addition
+    const response = await fetch(url, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
+      body: formData,
     });
-
-    console.log('Login response:', response);
-
-    if (response.error) {
-      return { error: response.error };
+    
+    console.log('Login response status:', response.status);
+    
+    if (!response.ok) {
+      console.error('Login failed with status:', response.status);
+      return { error: `Authentication failed with status ${response.status}` };
     }
+    
+    const data = await response.json() as Token;
 
-    if (response.data) {
-      setToken(response.data);
-      const userResponse = await get<any>('/users/me');
-      console.log('User response:', userResponse);
-      
-      if (userResponse.data) {
-        return { user: transformUser(userResponse.data) };
-      }
+    console.log('Login response data:', data);
+
+    // Set token using the data we got from the fetch response
+    setToken(data, options?.rememberMe);
+    
+    // Now that we're authenticated, get user info
+    const userResponse = await get<any>('/users/me');
+    console.log('User response:', userResponse);
+    
+    if (userResponse.error) {
+      return { error: userResponse.error };
+    }
+    
+    if (userResponse.data) {
+      return { user: transformUser(userResponse.data) };
     }
 
     return { error: 'Failed to get user information' };
@@ -83,18 +104,36 @@ export const refreshToken = async (): Promise<{ success: boolean; error?: string
   }
   
   try {
-    const response = await post<Token>('/auth/refresh', { refresh_token: refreshToken });
+    // Important: Don't add trailing slash for refresh to ensure exact path match
+    const refreshPath = '/auth/refresh';
+    const url = `${API_BASE_URL}${refreshPath}`;
     
-    if (response.error) {
-      return { success: false, error: response.error };
+    console.log('Refresh token URL:', url);
+    
+    // Use JSON for refresh token request (this endpoint expects JSON, not form data)
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    
+    console.log('Refresh token response status:', response.status);
+    
+    if (!response.ok) {
+      console.error('Refresh token failed with status:', response.status);
+      return { success: false, error: `Token refresh failed with status ${response.status}` };
     }
     
-    if (response.data) {
-      setToken(response.data);
-      return { success: true };
-    }
+    const data = await response.json() as Token;
+    console.log('Refresh token response data:', data);
     
-    return { success: false, error: 'Failed to refresh token' };
+    // Preserve the current storage type when refreshing
+    const storageType = localStorage.getItem('tokenStorage') || 'local';
+    const rememberMe = storageType === 'local';
+    setToken(data, rememberMe);
+    return { success: true };
   } catch (error) {
     console.error("Token refresh error:", error);
     return { success: false, error: 'An unexpected error occurred while refreshing token' };

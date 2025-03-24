@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 import os
+import logging
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.db.base import get_db
@@ -10,6 +11,7 @@ from app.core.config import settings
 from app.services.user import UserService
 from app.services.llm_config import LLMConfigService
 from app.rag.singleton import rag_singleton
+from app.utils.middleware import TrailingSlashMiddleware
 
 # Create the app directory if it doesn't exist
 app_dir = Path(__file__).parent / "app"
@@ -24,9 +26,12 @@ app = FastAPI(
     title="Doogie Chat Bot API",
     description="API for Doogie Chat Bot with Hybrid RAG system",
     version="0.1.0",
+    # Disable automatic redirects for trailing slashes
+    # This ensures URLs work consistently with or without trailing slashes
+    redirect_slashes=False,
 )
 
-# Add CORS middleware with environment-specific configuration
+# Add middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -34,6 +39,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+# Add trailing slash middleware
+app.add_middleware(TrailingSlashMiddleware)
 
 # Root endpoint
 @app.get("/")
@@ -52,6 +60,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 # Error handlers
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
+    logging.error(f"HTTP error: {exc.status_code} - {exc.detail} - Path: {request.url.path}")
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
@@ -59,6 +68,7 @@ async def http_exception_handler(request, exc):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
+    logging.error(f"Unhandled exception: {str(exc)} - Path: {request.url.path}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Internal server error"},

@@ -1,51 +1,270 @@
-import { Chat, Feedback, Message, PaginatedResponse, PaginationParams } from '@/types';
+import { Chat, Feedback, Message, PaginatedResponse, PaginationParams, Tag } from '@/types';
 import { del, get, getPaginated, post, put, getApiUrl } from './api';
+
+// Use getUserTags() instead to get tags from the backend
+// Empty array to avoid errors in case API isn't yet available
+export const PREDEFINED_TAGS: Tag[] = [];
+
+// Tag Management API Functions
+
+/**
+ * Get all tags for the current user (simple list, no pagination)
+ */
+export const getUserTags = async (): Promise<{
+  tags?: Tag[];
+  error?: string;
+}> => {
+  console.log('Fetching user tags');
+
+  // Check authentication
+  const token = localStorage.getItem('token');
+  if (!token) {
+    console.error('No authentication token found');
+    return { error: 'Authentication failed. Please log in again.', tags: [] };
+  }
+
+  try {
+    // Use the standard API function to ensure proper URL handling
+    const response = await get<Tag[]>('/tags');
+    
+    console.log('getUserTags response:', response);
+    
+    if (response.error) {
+      console.error('Error from API:', response.error);
+      return { error: response.error, tags: [] };
+    }
+    
+    return { tags: response.data };
+  } catch (error) {
+    console.error('Error in getUserTags:', error);
+    // Return empty array with error for graceful degradation
+    return { tags: [], error: 'Failed to fetch tags. Please try again.' };
+  }
+};
+
+/**
+ * Search and filter tags with pagination
+ */
+export interface TagSearchParams {
+  search?: string;
+  color?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface PaginatedTags {
+  items: Tag[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
+export const searchTags = async (params: TagSearchParams = {}): Promise<{
+  data?: PaginatedTags;
+  error?: string;
+}> => {
+  try {
+    console.log('Searching tags with params:', params);
+    
+    // Build the query parameters
+    const queryParams: Record<string, string> = {};
+    
+    if (params.search) queryParams.search = params.search;
+    if (params.color) queryParams.color = params.color;
+    if (params.page) queryParams.page = params.page.toString();
+    if (params.pageSize) queryParams.page_size = params.pageSize.toString();
+    if (params.sortBy) queryParams.sort_by = params.sortBy;
+    if (params.sortOrder) queryParams.sort_order = params.sortOrder;
+    
+    // Use the standard API function for proper URL handling
+    const response = await get<PaginatedTags>('/tags/search', queryParams);
+    
+    console.log('searchTags response:', response);
+    
+    if (response.error) {
+      console.error('Error from API:', response.error);
+      return { error: response.error };
+    }
+    
+    return { data: response.data };
+  } catch (error) {
+    console.error('Error in searchTags:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { error: `Failed to search tags: ${errorMessage}` };
+  }
+};
+
+/**
+ * Create a new tag
+ */
+export const createTag = async (name: string, color: string): Promise<{
+  tag?: Tag;
+  error?: string;
+}> => {
+  try {
+    console.log('Creating tag with name:', name, 'and color:', color);
+
+    // Use the standard API function for proper URL handling
+    const response = await post<Tag>('/tags', { name, color });
+    
+    console.log('createTag response:', response);
+    
+    if (response.error) {
+      console.error('Error from API:', response.error);
+      return { error: response.error };
+    }
+    
+    return { tag: response.data };
+  } catch (error) {
+    console.error('Error in createTag:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { error: `Failed to create tag: ${errorMessage}` };
+  }
+};
+
+/**
+ * Update an existing tag
+ */
+export const updateTag = async (
+  tagId: string,
+  data: { name?: string; color?: string }
+): Promise<{
+  tag?: Tag;
+  error?: string;
+}> => {
+  try {
+    console.log('Updating tag with id:', tagId, 'and data:', data);
+
+    // Use the standard API function for proper URL handling
+    const response = await put<Tag>(`/tags/${tagId}`, data);
+    
+    console.log('updateTag response:', response);
+    
+    if (response.error) {
+      console.error('Error from API:', response.error);
+      return { error: response.error };
+    }
+    
+    return { tag: response.data };
+  } catch (error) {
+    console.error('Error in updateTag:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { error: `Failed to update tag: ${errorMessage}` };
+  }
+};
+
+/**
+ * Delete a tag
+ */
+export const deleteTag = async (tagId: string): Promise<{
+  success?: boolean;
+  error?: string;
+}> => {
+  try {
+    console.log('Deleting tag with id:', tagId);
+
+    // Use the standard API function for proper URL handling
+    const response = await del(`/tags/${tagId}`);
+    
+    console.log('deleteTag response:', response);
+    
+    if (response.error) {
+      console.error('Error from API:', response.error);
+      return { error: response.error };
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error in deleteTag:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { error: `Failed to delete tag: ${errorMessage}` };
+  }
+};
 
 // Get all chats
 export const getChats = async (): Promise<{
   chats?: Chat[];
   error?: string;
 }> => {
-  const response = await get<Chat[]>('/chats');
+  try {
+    const response = await get<Chat[]>('/chats');
+    console.log('getChats response:', response);
 
-  if (response.error) {
-    return { error: response.error };
+    if (response.error) {
+      return { error: response.error };
+    }
+
+    return { chats: response.data };
+  } catch (error) {
+    console.error('Error in getChats:', error);
+    return { error: 'Failed to fetch chats. Please try again.' };
   }
-
-  return { chats: response.data };
 };
 
 // Get a single chat by ID
 export const getChat = async (chatId: string): Promise<{ chat?: Chat; error?: string }> => {
-  const response = await get<Chat>(`/chats/${chatId}`);
+  try {
+    const response = await get<Chat>(`/chats/${chatId}`);
+    console.log('getChat response:', response);
 
-  if (response.error) {
-    return { error: response.error };
+    if (response.error) {
+      return { error: response.error };
+    }
+
+    return { chat: response.data };
+  } catch (error) {
+    console.error('Error in getChat:', error);
+    return { error: 'Failed to fetch chat. Please try again.' };
   }
-
-  return { chat: response.data };
 };
 
 // Create a new chat
 export const createChat = async (title: string): Promise<{ chat?: Chat; error?: string }> => {
-  const response = await post<Chat>('/chats', { title });
-
-  if (response.error) {
-    return { error: response.error };
+  try {
+    console.log('Creating chat with title:', title);
+    
+    // Use the standard API function for proper URL handling
+    const response = await post<Chat>('/chats', { title });
+    
+    console.log('createChat response:', response);
+    
+    if (response.error) {
+      console.error('Error from API:', response.error);
+      return { error: response.error };
+    }
+    
+    return { chat: response.data };
+  } catch (error) {
+    console.error('Error in createChat:', error);
+    // More detailed error message for debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { error: `Failed to create chat: ${errorMessage}` };
   }
-
-  return { chat: response.data };
 };
 
 // Update a chat
-export const updateChat = async (chatId: string, title: string): Promise<{ success?: boolean; error?: string }> => {
-  const response = await put(`/chats/${chatId}`, { title });
+export const updateChat = async (
+  chatId: string, 
+  data: { title?: string; tags?: string[] }
+): Promise<{ success?: boolean; error?: string }> => {
+  const response = await put(`/chats/${chatId}`, data);
 
   if (response.error) {
     return { error: response.error };
   }
 
   return { success: true };
+};
+
+// Update chat tags
+export const updateChatTags = async (
+  chatId: string,
+  tags: string[]
+): Promise<{ success?: boolean; error?: string }> => {
+  return updateChat(chatId, { tags });
 };
 
 // Delete a chat
@@ -105,6 +324,8 @@ export const streamMessage = async (
       false
     );
     
+    console.log('Setting up EventSource at:', streamUrl);
+    
     // Set up event source for SSE
     const eventSource = new EventSource(streamUrl);
     
@@ -119,6 +340,7 @@ export const streamMessage = async (
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('Received event data snippet:', event.data.substring(0, 50) + '...');
         
         // Update full content
         fullContent = data.content;
@@ -133,6 +355,7 @@ export const streamMessage = async (
         
         // If this is the final chunk, complete the process
         if (data.done) {
+          console.log('Stream complete. Closing EventSource.');
           eventSource.close();
           
           // Construct the complete message
@@ -163,6 +386,7 @@ export const streamMessage = async (
       eventSource.close();
     };
   } catch (error) {
+    console.error('Error in streamMessage:', error);
     onError((error as Error).message);
   }
 };

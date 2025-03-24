@@ -24,6 +24,7 @@ class Chat(Base):
     
     # Relationships
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
+    chat_tags = relationship("ChatTag", back_populates="chat", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Chat {self.id}>"

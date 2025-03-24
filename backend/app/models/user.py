@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, Column, String, DateTime, Enum
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 import enum
 from app.db.base import Base
 
@@ -24,6 +25,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_login = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    tags = relationship("Tag", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.email}>"

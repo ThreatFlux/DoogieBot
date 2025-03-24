@@ -1,4 +1,5 @@
 from typing import Generator, Optional
+import logging
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -7,6 +8,8 @@ from app.db.base import get_db
 from app.core.config import settings
 from app.models.user import User, UserStatus
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
@@ -83,25 +86,32 @@ def get_current_user(
     )
     
     try:
+        logger.debug(f"Decoding token: {token[:10]}...")
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
         user_id: str = payload.get("sub")
         if user_id is None:
+            logger.error("Token missing 'sub' field")
             raise credentials_exception
-    except (JWTError, ValidationError):
+    except (JWTError, ValidationError) as e:
+        logger.error(f"Token validation error: {str(e)}")
         raise credentials_exception
     
+    logger.debug(f"Looking up user with ID: {user_id}")
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
+        logger.error(f"User with ID {user_id} not found")
         raise credentials_exception
     
     if user.status != UserStatus.ACTIVE:
+        logger.error(f"User {user_id} has inactive status: {user.status}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user account",
         )
     
+    logger.debug(f"Authenticated user: {user.email}")
     return user
 
 def get_current_active_user(
