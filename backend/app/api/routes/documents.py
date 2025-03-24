@@ -657,12 +657,15 @@ async def import_github_repository(
     try:
         logger.info(f"Importing GitHub repository: {repo_data.repo_url}, branch: {repo_data.branch}, file types: {repo_data.file_types}, background: {repo_data.background_processing}")
         
+        # Create DocumentService instance
+        document_service = DocumentService()
+        
         # If background processing is requested, run the import in a background task
         if repo_data.background_processing:
             async def import_and_process():
                 try:
                     # Import documents from GitHub
-                    result = await DocumentService.import_github_repository(
+                    result = await document_service.import_github_repository(
                         db,
                         repo_data.repo_url,
                         repo_data.branch,
