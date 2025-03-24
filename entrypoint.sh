@@ -6,6 +6,11 @@ run_migrations() {
     echo "Running database migrations..."
     cd /app/backend
     python -m alembic upgrade head
+    
+    # Run the tag tables creation script
+    echo "Creating tag tables..."
+    python create_tag_tables.py
+    
     echo "Database migrations completed."
 }
 

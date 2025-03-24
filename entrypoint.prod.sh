@@ -7,6 +7,11 @@ run_migrations() {
     cd /app/backend
     # Explicitly specify the alembic.ini file path
     python -m alembic -c /app/backend/alembic.ini upgrade head
+    
+    # Run the tag tables creation script
+    echo "Creating tag tables..."
+    python create_tag_tables.py
+    
     echo "Database migrations completed."
 }
 
