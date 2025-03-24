@@ -12,10 +12,9 @@ services:
       - ./backend:/app/backend  # Bind mount for backend development
       - ./frontend:/app/frontend  # Bind mount for frontend development
       # Exclude node_modules and build artifacts from host machine
-      - /app/frontend/node_modules
-      - /app/frontend/.next
-      - /app/backend/__pycache__
-      - ./pnpm-store:/app/.pnpm-store
+      #- /app/frontend/node_modules
+      #- /app/frontend/.next
+      #- /app/backend/__pycache__
     environment:
       - NODE_ENV=development
       - PYTHONPATH=/app
