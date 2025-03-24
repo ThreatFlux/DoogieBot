@@ -34,6 +34,7 @@ const Layout: React.FC<LayoutProps> = ({
   
   // Sidebar states
   const [isSidebarVisible, setSidebarVisible] = useState(isSidebarOpen);
+  const [isPinned, setIsPinned] = useState(false); // New state for pinning the sidebar
   const sidebarRef = useRef<HTMLDivElement>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const autoHideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -76,11 +77,12 @@ const Layout: React.FC<LayoutProps> = ({
     return () => document.removeEventListener('focusin', handleFocusCheck);
   }, []);
   
-  // Handle clicks outside the sidebar to close it
+  // Handle clicks outside the sidebar to close it (only if not pinned)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
         isSidebarVisible && 
+        !isPinned && // Only close if not pinned
         sidebarRef.current && 
         !sidebarRef.current.contains(event.target as Node) &&
         !isHoveringTrigger
@@ -95,7 +97,7 @@ const Layout: React.FC<LayoutProps> = ({
     
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isSidebarVisible, isHoveringTrigger]);
+  }, [isSidebarVisible, isHoveringTrigger, isPinned]);
   
   // Handle escape key to close sidebar
   useEffect(() => {
@@ -144,6 +146,24 @@ const Layout: React.FC<LayoutProps> = ({
       sidebarElement?.removeEventListener('mouseenter', handleMouseEnter);
     };
   }, []);
+  
+  // Handle pinning/unpinning sidebar
+  const togglePinned = () => {
+    setIsPinned(!isPinned);
+    // Ensure sidebar is visible when pinned
+    if (!isPinned) {
+      setSidebarVisible(true);
+      announce({ 
+        message: 'Sidebar pinned open', 
+        politeness: 'polite' 
+      });
+    } else {
+      announce({ 
+        message: 'Sidebar unpinned', 
+        politeness: 'polite' 
+      });
+    }
+  };
   
   // Navigation items
   const navItems = [
@@ -258,16 +278,18 @@ const Layout: React.FC<LayoutProps> = ({
           }}
           onMouseLeave={() => {
             setIsHoveringTrigger(false);
-            // Set a timeout to close the sidebar after a delay
-            autoHideTimeoutRef.current = setTimeout(() => {
-              if (!sidebarRef.current?.contains(document.activeElement)) {
-                setSidebarVisible(false);
-                announce({ 
-                  message: 'Sidebar closed', 
-                  politeness: 'polite' 
-                });
-              }
-            }, 1000); // 1 second delay
+            // Only set auto-hide timeout if not pinned
+            if (!isPinned) {
+              autoHideTimeoutRef.current = setTimeout(() => {
+                if (!sidebarRef.current?.contains(document.activeElement)) {
+                  setSidebarVisible(false);
+                  announce({ 
+                    message: 'Sidebar closed', 
+                    politeness: 'polite' 
+                  });
+                }
+              }, 1000); // 1 second delay
+            }
           }}
           aria-hidden="true"
         />
@@ -299,23 +321,24 @@ const Layout: React.FC<LayoutProps> = ({
           role={ariaLandmarks.navigation}
           aria-label="Main Navigation and Chat History"
           aria-expanded={isSidebarVisible}
+
         >
           {/* App Logo and Title */}
           <div className="p-4 border-b border-gray-700 flex items-center justify-between">
             <button
-              onClick={() => {
-                setSidebarVisible(false);
-                announce({ 
-                  message: 'Sidebar closed', 
-                  politeness: 'polite' 
-                });
-              }}
+              onClick={togglePinned}
               className="absolute right-4 text-gray-300 hover:text-white"
-              aria-label="Close sidebar"
+              aria-label={isPinned ? "Unpin sidebar" : "Pin sidebar"}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
+              {isPinned ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M6 4a2 2 0 012-2h4a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V4zm2 0v14h4V4H8z" clipRule="evenodd" />
+                </svg>
+              )}
             </button>
             <Link href="/" className="flex items-center mx-auto py-2">
               <img 
@@ -426,7 +449,7 @@ const Layout: React.FC<LayoutProps> = ({
         <div className="flex-1 flex flex-col min-h-screen">
           {/* Main content area */}
           <main 
-            className="flex-1 p-6 pt-4 overflow-auto"
+            className="flex-1 p-6 pt-4 overflow-auto transition-all duration-300 md:ml-72 lg:ml-80 w-auto md:w-[calc(100%-18rem)] lg:w-[calc(100%-20rem)]"
             role={ariaLandmarks.main}
             id="main-content"
             ref={mainContentRef}
@@ -434,7 +457,7 @@ const Layout: React.FC<LayoutProps> = ({
             aria-label="Main content"
           >
             {/* App header for mobile - only shown on smaller screens */}
-            <div className="flex items-center md:hidden mb-4">
+            <div className="flex items-center md:hidden mb-4 ml-0">
               <button
                 onClick={() => {
                   setSidebarVisible(!isSidebarVisible);

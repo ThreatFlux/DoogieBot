@@ -583,10 +583,9 @@ export const CleanChatPage = () => {
     let chat = currentChat;
     if (!chat) {
       setIsLoading(true); // Show loading state
-      console.log('No current chat, creating new one with title:', messageContent.slice(0, 30));
       
-      const title = messageContent.slice(0, 30) + (messageContent.length > 30 ? '...' : '');
-      const { chat: newChat, error: createError } = await createChat(title);
+      // Start with default title "New Conversation"
+      const { chat: newChat, error: createError } = await createChat("New Conversation");
       
       setIsLoading(false); // Hide loading state
       
@@ -652,6 +651,22 @@ export const CleanChatPage = () => {
     try {
       // Refresh chat list to show new chat with correct title
       await loadChats();
+
+      // Check if this is the first user message and update title if needed
+      if (chat.title === "New Conversation") {
+        // Create a new title from the message content
+        const newTitle = messageContent.length > 30 
+          ? `${messageContent.substring(0, 30)}...` 
+          : messageContent;
+        
+        console.log('Updating chat title based on first message:', newTitle);
+        const updateResult = await updateChat(chat.id, { title: newTitle });
+        
+        if (updateResult.success) {
+          // Update the title in the current state
+          setCurrentChat(prev => prev ? { ...prev, title: newTitle } : null);
+        }
+      }
       
       // Ensure we have the latest chat state
       if (!currentChat || currentChat.id !== chat.id) {
