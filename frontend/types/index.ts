@@ -209,6 +209,7 @@ export type Theme = 'dark' | 'light';
 export interface ApiResponse<T> {
   data?: T;
   error?: string;
+  errorObject?: any;
 }
 
 // Pagination Types

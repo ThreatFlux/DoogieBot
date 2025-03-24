@@ -1,13 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useState, useEffect } from 'react';
 import { Tag } from '@/types';
 import TagSearchBar from './TagSearchBar';
-
-// Dynamically import react-window to avoid SSR issues
-const List = dynamic(
-  () => import('react-window').then((mod) => mod.FixedSizeList),
-  { ssr: false }
-);
 
 export interface TagSelectorProps {
   availableTags: Tag[];
@@ -54,49 +47,6 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   const handleTagsLoaded = (tags: Tag[], pages: number) => {
     setFilteredTags(tags);
     setTotalPages(pages);
-  };
-
-  // Calculating list height based on items
-  const itemHeight = size === 'small' ? 26 : 32;
-  const listHeight = Math.min(filteredTags.length * itemHeight, maxHeight);
-
-  // Tag item renderer for virtualized list
-  const TagItem = ({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const tag = filteredTags[index];
-    if (!tag) return null;
-
-    return (
-      <button
-        key={tag.id}
-        onClick={() => toggleTag(tag.id)}
-        className={`
-          tag-item inline-flex items-center rounded transition-colors
-          ${selectedTags.includes(tag.id) ? 'ring-1' : 'opacity-70 hover:opacity-100'}
-          ${size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-sm'}
-        `}
-        style={{
-          ...style,
-          backgroundColor: `${tag.color}10`,
-          color: tag.color,
-          borderColor: selectedTags.includes(tag.id) ? tag.color : 'transparent',
-          width: 'auto',
-          height: 'auto',
-        }}
-        type="button"
-      >
-        <span>{tag.name}</span>
-        {selectedTags.includes(tag.id) && (
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            className={`${size === 'small' ? 'h-3 w-3 ml-1' : 'h-4 w-4 ml-1'}`}
-            viewBox="0 0 20 20" 
-            fill="currentColor"
-          >
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-        )}
-      </button>
-    );
   };
 
   // Add loading indicator
@@ -161,54 +111,44 @@ const TagSelector: React.FC<TagSelectorProps> = ({
         </div>
       )}
 
-      {/* Either use virtualized list or render directly based on tag count */}
-      {filteredTags.length > 20 && typeof window !== 'undefined' ? (
-        <div className="tag-virtualized-list overflow-auto border border-gray-200 dark:border-gray-700 rounded">
-          {List && (
-            <List
-              height={listHeight}
-              itemCount={filteredTags.length}
-              itemSize={itemHeight}
-              width="100%"
-              className="tag-list"
-            >
-              {TagItem}
-            </List>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-1">
-          {filteredTags.map(tag => (
-            <button
-              key={tag.id}
-              onClick={() => toggleTag(tag.id)}
-              className={`
-                tag-item inline-flex items-center rounded transition-colors
-                ${selectedTags.includes(tag.id) ? 'ring-1' : 'opacity-70 hover:opacity-100'}
-                ${size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-sm'}
-              `}
-              style={{
-                backgroundColor: `${tag.color}10`,
-                color: tag.color,
-                borderColor: selectedTags.includes(tag.id) ? tag.color : 'transparent',
-              }}
-              type="button"
-            >
-              <span>{tag.name}</span>
-              {selectedTags.includes(tag.id) && (
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  className={`${size === 'small' ? 'h-3 w-3 ml-1' : 'h-4 w-4 ml-1'}`}
-                  viewBox="0 0 20 20" 
-                  fill="currentColor"
-                >
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Simple list view without virtualization */}
+      <div 
+        className="flex flex-wrap gap-1"
+        style={{ 
+          maxHeight: `${maxHeight}px`,
+          overflowY: 'auto'
+        }}
+      >
+        {filteredTags.map(tag => (
+          <button
+            key={tag.id}
+            onClick={() => toggleTag(tag.id)}
+            className={`
+              tag-item inline-flex items-center rounded transition-colors
+              ${selectedTags.includes(tag.id) ? 'ring-1' : 'opacity-70 hover:opacity-100'}
+              ${size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-sm'}
+            `}
+            style={{
+              backgroundColor: `${tag.color}10`,
+              color: tag.color,
+              borderColor: selectedTags.includes(tag.id) ? tag.color : 'transparent',
+            }}
+            type="button"
+          >
+            <span>{tag.name}</span>
+            {selectedTags.includes(tag.id) && (
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                className={`${size === 'small' ? 'h-3 w-3 ml-1' : 'h-4 w-4 ml-1'}`}
+                viewBox="0 0 20 20" 
+                fill="currentColor"
+              >
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+        ))}
+      </div>
 
       {/* Pagination for large collections */}
       {totalPages > 1 && (

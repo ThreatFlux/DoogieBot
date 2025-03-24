@@ -29,6 +29,7 @@ const Layout: React.FC<LayoutProps> = ({
 }) => {
   const { isAuthenticated, isAdmin, user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const shortcuts = useShortcuts();
   const router = useRouter();
   
   // Sidebar states
@@ -404,9 +405,9 @@ const Layout: React.FC<LayoutProps> = ({
                 </button>
                 
                 {/* Keyboard shortcuts button - if using ShortcutContext */}
-                {useShortcuts && (
+                {shortcuts && (
                   <button
-                    onClick={useShortcuts.toggleShortcutDialog}
+                    onClick={shortcuts.toggleShortcutDialog}
                     className="flex items-center text-gray-300 hover:text-white"
                     aria-label="Show keyboard shortcuts"
                   >

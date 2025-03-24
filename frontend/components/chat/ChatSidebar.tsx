@@ -6,6 +6,8 @@ import SearchBar from '@/components/chat/SearchBar';
 import TagSelector from '@/components/chat/TagSelector';
 import { Tag, Chat } from '@/types';
 import { getUserTags, createTag, updateTag, deleteTag, searchTags, TagSearchParams } from '@/services/chat';
+import { useNotification } from '@/contexts/NotificationContext';
+import { showSuccess } from '@/utils/notificationUtils';
 
 interface ChatSidebarProps {
   chats: Chat[];
@@ -46,6 +48,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
   const [editTagName, setEditTagName] = useState('');
   const [editTagColor, setEditTagColor] = useState('');
+  
+  // Get notification context
+  const { showNotification } = useNotification();
   const [isEditingTag, setIsEditingTag] = useState(false);
   
   // Tag deletion state
@@ -168,10 +173,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
         setNewTagName('');
         setShowNewTagForm(false);
         
-        // Show success notification if available
-        if (typeof window !== 'undefined' && window.showNotification) {
-          window.showNotification('Tag created successfully', 'success');
-        }
+        // Show success notification
+        showSuccess(showNotification, 'Tag created successfully');
       } else if (createError) {
         console.error('Error from createTag:', createError);
         setError(`${createError}`);

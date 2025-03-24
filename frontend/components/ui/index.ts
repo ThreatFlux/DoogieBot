@@ -2,7 +2,7 @@
 
 // Basic Components
 export { Button } from './Button';
-export { default as Input } from './Input';
+export { Input } from './Input';
 export { default as Toast } from './Toast';
 export { default as ConfirmDialog } from './ConfirmDialog';
 export { default as Tooltip } from './Tooltip';

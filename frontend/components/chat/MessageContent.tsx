@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Message } from '@/types';
@@ -11,6 +12,13 @@ import DocumentReferences from '@/components/chat/DocumentReferences';
 interface MessageContentProps {
   content: string;
   message: Message;
+}
+
+// Define the expected structure for code blocks to help with TypeScript typing
+interface CodeProps {
+  children: React.ReactNode;
+  className?: string;
+  [key: string]: any;
 }
 
 const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => {
@@ -118,16 +126,18 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
   );
 
   // Custom components for ReactMarkdown
-  const MarkdownComponents = {
-    code: ({ node, inline, className, children, ...props }) => {
-      const match = /language-(\w+)/.exec(className || '');
-      const codeContent = String(children).replace(/\n$/, '');
+  const MarkdownComponents: Components = {
+    code(props) {
+      const codeContent = String(props.children).replace(/\n$/, '');
+      // Get the language from className which is in format "language-xxx"
+      const match = /language-(\w+)/.exec(props.className || '');
       
-      if (!inline && match) {
+      // Check if it's a code block with language
+      if (match) {
         return (
           <div className="relative group">
             <pre className={`language-${match[1]}`}>
-              <code className={className} {...props}>
+              <code className={props.className} {...props}>
                 {codeContent}
               </code>
             </pre>
@@ -149,8 +159,8 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
         );
       } else {
         return (
-          <code className={className} {...props}>
-            {children}
+          <code className={props.className} {...props}>
+            {props.children}
           </code>
         );
       }

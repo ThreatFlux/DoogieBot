@@ -1,10 +1,9 @@
 import { useCallback } from 'react';
-import { useNotification } from '@/contexts/NotificationContext';
-import { 
-  handleError, 
-  AppError, 
-  ErrorCategory, 
-  NotificationType
+import { useNotification, NotificationType } from '@/contexts/NotificationContext';
+import {
+  handleError,
+  AppError,
+  ErrorCategory
 } from '@/utils/errorHandling';
 
 interface ErrorHandlerHook {
