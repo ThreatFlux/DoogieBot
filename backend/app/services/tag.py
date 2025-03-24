@@ -92,7 +92,7 @@ def get_user_tags_paginated(
     page_size: int = 20,
     sort_by: str = "name",
     sort_order: str = "asc"
-) -> PaginatedResponse:
+) -> PaginatedResponse[Tag]:
     """
     Get paginated tags for a specific user with optional filtering
     """
@@ -112,8 +112,22 @@ def get_user_tags_paginated(
     # Calculate total pages
     total_pages = (total + page_size - 1) // page_size
     
+    # Convert SQLAlchemy models to dictionaries that can be validated by Pydantic
+    tag_dicts = []
+    for tag in tags:
+        tag_dict = {
+            "id": tag.id,
+            "name": tag.name,
+            "color": tag.color,
+            "user_id": tag.user_id,
+            "created_at": tag.created_at,
+            "updated_at": tag.updated_at
+        }
+        tag_dicts.append(tag_dict)
+    
+    # Use the dictionaries directly with PaginatedResponse
     return PaginatedResponse(
-        items=tags,
+        items=tag_dicts,
         page=page,
         page_size=page_size,
         total=total,

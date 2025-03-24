@@ -41,7 +41,7 @@ def get_user_tags(
     return tag_service.get_user_tags(db, current_user.id, skip, limit)
 
 # Search route with no trailing slash
-@router.get("/search", response_model=PaginatedResponse)
+@router.get("/search", response_model=PaginatedResponse[Tag])
 def search_user_tags(
     search: Optional[str] = Query(None, description="Search term to filter tag names"),
     color: Optional[str] = Query(None, description="Filter by tag color"),
@@ -67,7 +67,7 @@ def search_user_tags(
     )
 
 # Search route with trailing slash
-@router.get("/search/", response_model=PaginatedResponse)
+@router.get("/search/", response_model=PaginatedResponse[Tag])
 def search_user_tags_with_slash(
     search: Optional[str] = Query(None, description="Search term to filter tag names"),
     color: Optional[str] = Query(None, description="Filter by tag color"),

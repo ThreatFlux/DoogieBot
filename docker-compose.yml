@@ -15,8 +15,7 @@ services:
       - /app/frontend/node_modules
       - /app/frontend/.next
       - /app/backend/__pycache__
-      # Named volume for pnpm store
-      - pnpm-store:/app/.pnpm-store
+      - ./pnpm-store:/app/.pnpm-store
     environment:
       - NODE_ENV=development
       - PYTHONPATH=/app
@@ -55,6 +54,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-
-volumes:
-  pnpm-store: {}  # Define named volume for persistent pnpm store with empty config

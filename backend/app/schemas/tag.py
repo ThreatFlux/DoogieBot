@@ -26,21 +26,26 @@ class TagInDB(TagBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {
+        "from_attributes": True  # Pydantic V2 way of setting orm_mode=True
+    }
 
 
 class Tag(TagInDB):
     """Tag schema that is returned to the client"""
     pass
 
-class PaginatedResponse(BaseModel):
+class PaginatedResponse(BaseModel, Generic[T]):
     """Generic paginated response"""
-    items: List[Tag]
+    items: List[T]
     page: int
     page_size: int
     total: int
     total_pages: int
+    
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
 class TagFilter(BaseModel):
     """Query parameters for tag filtering"""
