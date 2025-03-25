@@ -34,6 +34,9 @@ class OpenRouterClient(LLMClient):
             embedding_model: Model to use for embeddings (if different from chat model)
         """
         super().__init__(model, api_key, base_url, embedding_model)
+        # Initialize streaming state variables
+        self._current_reasoning = ""
+        self._reasoning_complete = False
         self.api_key = api_key or settings.OPENROUTER_API_KEY
         if not self.api_key:
             raise ValueError("OpenRouter API key is required")
@@ -70,8 +73,8 @@ class OpenRouterClient(LLMClient):
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": settings.OPENROUTER_REFERRER or "https://github.com/rooveterinary/doogie",
-            "X-Title": settings.OPENROUTER_APP_TITLE or "Doogie"
+            "HTTP-Referer": getattr(settings, "OPENROUTER_REFERRER", "https://github.com/rooveterinary/doogie"),
+            "X-Title": getattr(settings, "OPENROUTER_APP_TITLE", "Doogie")
         }
         
         # Log the messages for debugging
@@ -146,6 +149,9 @@ class OpenRouterClient(LLMClient):
         payload: Dict[str, Any],
         start_time: float
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        # Initialize per-request state
+        self._current_reasoning = ""
+        self._has_reasoning = False
         """
         Stream response from OpenRouter.
         
@@ -190,26 +196,65 @@ class OpenRouterClient(LLMClient):
                 async for line in response.content:
                     line = line.decode('utf-8').strip()
                     
-                    # Skip empty lines or [DONE]
-                    if not line or line == "data: [DONE]":
+                    # Skip empty lines, [DONE], or processing messages
+                    if not line or line == "data: [DONE]" or line.startswith(": OPENROUTER PROCESSING"):
                         if line == "data: [DONE]":
                             logger.debug("Received [DONE] from OpenRouter stream")
+                        elif line.startswith(": OPENROUTER PROCESSING"):
+                            logger.debug("OpenRouter processing message received")
                         continue
                     
-                    # Remove "data: " prefix
+                    # Remove "data: " prefix if present
                     if line.startswith("data: "):
                         line = line[6:]
                     
                     try:
+                        # Skip if line is empty after processing
+                        if not line.strip():
+                            continue
+                            
                         data = json.loads(line)
+                        logger.debug(f"Raw OpenRouter response: {data}")
                         
+                        # Validate response structure
+                        if not isinstance(data, dict):
+                            logger.warning(f"Invalid response format: {data}")
+                            continue
+                            
                         # Extract delta content
-                        delta = data.get("choices", [{}])[0].get("delta", {})
+                        choices = data.get("choices", [])
+                        if not choices or not isinstance(choices, list):
+                            logger.warning(f"No choices in response: {data}")
+                            continue
+                            
+                        delta = choices[0].get("delta", {})
+                        if not isinstance(delta, dict):
+                            logger.warning(f"Invalid delta format: {delta}")
+                            continue
+                            
                         delta_content = delta.get("content", "")
+                        delta_reasoning = delta.get("reasoning", "")
                         
-                        if delta_content:
+                        if delta_content and isinstance(delta_content, str):
                             chunk_count += 1
                             content += delta_content
+                            
+                        if delta_reasoning and isinstance(delta_reasoning, str):
+                            # Initialize reasoning buffer if needed
+                            if not hasattr(self, '_current_reasoning'):
+                                self._current_reasoning = ""
+                                self._reasoning_complete = False
+                            
+                            # Only add to current reasoning if we haven't completed one yet
+                            if not self._reasoning_complete:
+                                self._current_reasoning += delta_reasoning
+                                
+                                # Check for complete reasoning
+                                if delta_reasoning.endswith(('.', '!', '?')):
+                                    if self._current_reasoning.strip():
+                                        content += f"\n<think>{self._current_reasoning.strip()}</think>\n"
+                                    self._current_reasoning = ""
+                                    self._reasoning_complete = True
                             token_count += 1  # Approximate token count
                             
                             # Log every 10th chunk to avoid excessive logging
@@ -250,6 +295,50 @@ class OpenRouterClient(LLMClient):
                 }
                 logger.debug(f"OpenRouter streaming complete, yielded {chunk_count} chunks")
     
+    async def list_models(self) -> List[Dict[str, Any]]:
+        """
+        List available models from OpenRouter.
+        
+        Returns:
+            List of model info dictionaries
+        """
+        # Ensure base_url is set
+        if not self.base_url or not self.base_url.startswith("http"):
+            self.base_url = "https://openrouter.ai/api/v1"
+            
+        url = f"{self.base_url}/models"
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "HTTP-Referer": getattr(settings, "OPENROUTER_REFERRER", "https://github.com/rooveterinary/doogie"),
+            "X-Title": getattr(settings, "OPENROUTER_APP_TITLE", "Doogie")
+        }
+        
+        try:
+            logger.info(f"Fetching OpenRouter models from {url}")
+            async with aiohttp.ClientSession() as session:
+                # Add cache-control headers to prevent caching
+                headers.update({
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                })
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"OpenRouter models API error: {response.status} - {error_text}")
+                        return []
+                    
+                    result = await response.json()
+                    models = result.get("data", [])
+                    logger.info(f"Received {len(models)} models from OpenRouter")
+                    if models:
+                        logger.debug(f"First model: {models[0].get('id')}")
+                    return models
+        except Exception as e:
+            logger.error(f"Error listing OpenRouter models: {str(e)}")
+            return []
+
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
         Get embeddings for a list of texts using OpenRouter.

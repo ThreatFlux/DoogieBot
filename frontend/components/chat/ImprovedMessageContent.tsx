@@ -4,7 +4,79 @@ import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { dracula } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+
+// Define a simple custom style to replace dracula
+const customDraculaStyle = {
+  'code[class*="language-"]': {
+    color: '#f8f8f2',
+    background: 'none',
+    textShadow: '0 1px rgba(0, 0, 0, 0.3)',
+    fontFamily: "Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace",
+    textAlign: 'left',
+    whiteSpace: 'pre',
+    wordSpacing: 'normal',
+    wordBreak: 'normal',
+    wordWrap: 'normal',
+    lineHeight: '1.5',
+    tabSize: 4,
+    hyphens: 'none',
+  },
+  'pre[class*="language-"]': {
+    color: '#f8f8f2',
+    background: '#282a36',
+    textShadow: '0 1px rgba(0, 0, 0, 0.3)',
+    fontFamily: "Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace",
+    textAlign: 'left',
+    whiteSpace: 'pre',
+    wordSpacing: 'normal',
+    wordBreak: 'normal',
+    wordWrap: 'normal',
+    lineHeight: '1.5',
+    tabSize: 4,
+    hyphens: 'none',
+    padding: '1em',
+    margin: '.5em 0',
+    overflow: 'auto',
+    borderRadius: '0.3em',
+  },
+  ':not(pre) > code[class*="language-"]': {
+    background: '#282a36',
+    padding: '.1em',
+    borderRadius: '.3em',
+    whiteSpace: 'normal',
+  },
+  comment: { color: '#6272a4' },
+  prolog: { color: '#6272a4' },
+  doctype: { color: '#6272a4' },
+  cdata: { color: '#6272a4' },
+  punctuation: { color: '#f8f8f2' },
+  property: { color: '#ff79c6' },
+  tag: { color: '#ff79c6' },
+  constant: { color: '#ff79c6' },
+  symbol: { color: '#ff79c6' },
+  deleted: { color: '#ff79c6' },
+  boolean: { color: '#bd93f9' },
+  number: { color: '#bd93f9' },
+  selector: { color: '#50fa7b' },
+  'attr-name': { color: '#50fa7b' },
+  string: { color: '#f1fa8c' },
+  char: { color: '#f1fa8c' },
+  builtin: { color: '#50fa7b' },
+  inserted: { color: '#50fa7b' },
+  operator: { color: '#ff79c6' },
+  entity: { color: '#f8f8f2', cursor: 'help' },
+  url: { color: '#f8f8f2' },
+  variable: { color: '#f8f8f2' },
+  atrule: { color: '#ff79c6' },
+  'attr-value': { color: '#f1fa8c' },
+  function: { color: '#50fa7b' },
+  'class-name': { color: '#8be9fd' },
+  keyword: { color: '#ff79c6' },
+  regex: { color: '#f1fa8c' },
+  important: { color: '#f1fa8c', fontWeight: 'bold' },
+  bold: { fontWeight: 'bold' },
+  italic: { fontStyle: 'italic' },
+};
 import { Message } from '@/types';
 import { parseThinkTags } from '@/utils/thinkTagParser';
 import Tooltip from '@/components/ui/Tooltip';
@@ -167,7 +239,7 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
         return (
           <div className="relative group">
             <SyntaxHighlighter
-              style={dracula as any}
+              style={customDraculaStyle as any}
               language={match[1]}
               PreTag="pre"
             >
@@ -176,7 +248,7 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation(); // Prevent triggering the message click
-                copyToClipboard(codeContent, 999 + Math.random());
+                copyToClipboard(codeContent, message.id + codeContent.length);
               }}
               className="absolute top-2 right-2 bg-gray-700 dark:bg-gray-600 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
               aria-label="Copy code to clipboard"
