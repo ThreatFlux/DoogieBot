@@ -51,6 +51,7 @@ out/
 .env.production.local
 *.db
 *.sqlite3
+backend/indexes/*
 
 # Logs
 logs/
