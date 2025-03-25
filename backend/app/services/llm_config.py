@@ -16,7 +16,6 @@ class LLMConfigService:
     """
     Service for managing LLM configurations.
     """
-    
     @staticmethod
     def create_config(db: Session, config: LLMConfigCreate) -> LLMConfig:
         """
@@ -29,16 +28,23 @@ class LLMConfigService:
         Returns:
             Created LLM configuration
         """
-        # Create new config
+        # Import datetime for explicit datetime fields
+        from datetime import datetime
+        
+        # Create new config with explicit datetime fields
         db_config = LLMConfig(
-            provider=config.provider,
+            provider=config.chat_provider,  # Set provider to chat_provider for backward compatibility
+            chat_provider=config.chat_provider,
+            embedding_provider=config.embedding_provider,
             model=config.model,
             embedding_model=config.embedding_model,
             system_prompt=config.system_prompt,
             api_key=config.api_key,
             base_url=config.base_url,
             config=config.config,
-            is_active=False  # New configs are not active by default
+            is_active=False,  # New configs are not active by default
+            created_at=datetime.now(),
+            updated_at=datetime.now()
         )
         
         db.add(db_config)
@@ -59,7 +65,24 @@ class LLMConfigService:
         Returns:
             LLM configuration or None if not found
         """
-        return db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
+        # Import datetime for explicit datetime fields
+        from datetime import datetime
+        
+        # Get config by ID
+        config = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
+        
+        # If config exists but has None for datetime fields, set them
+        if config:
+            if config.created_at is None:
+                config.created_at = datetime.now()
+                
+            if config.updated_at is None:
+                config.updated_at = datetime.now()
+                
+            # Commit the changes to ensure the fields are saved
+            db.commit()
+            
+        return config
     
     @staticmethod
     def get_active_config(db: Session) -> Optional[LLMConfig]:
@@ -72,7 +95,24 @@ class LLMConfigService:
         Returns:
             Active LLM configuration or None if not found
         """
-        return db.query(LLMConfig).filter(LLMConfig.is_active == True).first()
+        # Import datetime for explicit datetime fields
+        from datetime import datetime
+        
+        # Get active config
+        config = db.query(LLMConfig).filter(LLMConfig.is_active == True).first()
+        
+        # If config exists but has None for datetime fields, set them
+        if config:
+            if config.created_at is None:
+                config.created_at = datetime.now()
+                
+            if config.updated_at is None:
+                config.updated_at = datetime.now()
+                
+            # Commit the changes to ensure the fields are saved
+            db.commit()
+            
+        return config
     
     @staticmethod
     def get_all_configs(db: Session) -> List[LLMConfig]:
@@ -85,7 +125,25 @@ class LLMConfigService:
         Returns:
             List of LLM configurations
         """
-        return db.query(LLMConfig).all()
+        # Import datetime for explicit datetime fields
+        from datetime import datetime
+        
+        # Get all configs
+        configs = db.query(LLMConfig).all()
+        
+        # Check each config for None datetime fields
+        for config in configs:
+            if config.created_at is None:
+                config.created_at = datetime.now()
+                
+            if config.updated_at is None:
+                config.updated_at = datetime.now()
+        
+        # If any configs were updated, commit the changes
+        if configs and any(config.created_at is None or config.updated_at is None for config in configs):
+            db.commit()
+            
+        return configs
     
     @staticmethod
     def update_config(db: Session, config_id: str, config_update: LLMConfigUpdate) -> Optional[LLMConfig]:
@@ -100,6 +158,9 @@ class LLMConfigService:
         Returns:
             Updated LLM configuration or None if not found
         """
+        # Import datetime for explicit datetime fields
+        from datetime import datetime
+        
         # Get existing config
         db_config = LLMConfigService.get_config(db, config_id)
         if not db_config:
@@ -119,6 +180,17 @@ class LLMConfigService:
         # Update config
         for key, value in update_data.items():
             setattr(db_config, key, value)
+            
+            # If chat_provider is updated, also update provider for backward compatibility
+            if key == "chat_provider":
+                setattr(db_config, "provider", value)
+        
+        # Explicitly set updated_at to ensure it's not None
+        db_config.updated_at = datetime.now()
+        
+        # Ensure created_at is set if it's None
+        if db_config.created_at is None:
+            db_config.created_at = datetime.now()
         
         db.commit()
         db.refresh(db_config)
@@ -164,6 +236,9 @@ class LLMConfigService:
         Returns:
             Activated LLM configuration or None if not found
         """
+        # Import datetime for explicit datetime fields
+        from datetime import datetime
+        
         # Deactivate all configs
         db.execute(
             update(LLMConfig)
@@ -177,6 +252,14 @@ class LLMConfigService:
         
         # Activate config
         db_config.is_active = True
+        
+        # Explicitly set updated_at to ensure it's not None
+        db_config.updated_at = datetime.now()
+        
+        # Ensure created_at is set if it's None
+        if db_config.created_at is None:
+            db_config.created_at = datetime.now()
+            
         db.commit()
         db.refresh(db_config)
         
@@ -196,13 +279,13 @@ class LLMConfigService:
         # Get providers from factory
         providers = LLMFactory.get_available_providers()
         
-        # Get active config
+        # Get active config - this will ensure datetime fields are set
         active_config = LLMConfigService.get_active_config(db)
         
         # Add active status to providers
         if active_config:
             for provider_id, provider_info in providers.items():
-                provider_info["active"] = (provider_id == active_config.provider)
+                provider_info["active"] = (provider_id == active_config.chat_provider)
         
         return providers
     
@@ -224,7 +307,8 @@ class LLMConfigService:
         
         # Create default config with global system prompt
         default_config = LLMConfigCreate(
-            provider=settings.DEFAULT_LLM_PROVIDER,
+            chat_provider=settings.DEFAULT_LLM_PROVIDER,
+            embedding_provider=settings.DEFAULT_LLM_PROVIDER,
             model=settings.DEFAULT_CHAT_MODEL,
             embedding_model=settings.DEFAULT_EMBEDDING_MODEL,
             system_prompt=settings.DEFAULT_SYSTEM_PROMPT  # Global system prompt for all providers
@@ -234,6 +318,6 @@ class LLMConfigService:
         db_config = LLMConfigService.create_config(db, default_config)
         LLMConfigService.set_active_config(db, db_config.id)
         
-        logger.info(f"Created default LLM configuration with provider {db_config.provider}")
+        logger.info(f"Created default LLM configuration with chat provider {db_config.chat_provider} and embedding provider {db_config.embedding_provider}")
         
         return db_config

@@ -115,8 +115,27 @@ export interface ChunkingConfig {
 }
 
 export interface EmbeddingConfig {
-  model: string;
+  id: string;
   provider: string;
+  model: string;
+  api_key?: string;
+  base_url?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  config?: any;
+}
+
+export interface RerankingConfig {
+  id: string;
+  provider: string;
+  model: string;
+  api_key?: string;
+  base_url?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  config?: any;
 }
 
 export interface ProcessingConfig {
@@ -146,9 +165,12 @@ export interface LLMModel {
 
 export interface LLMConfig {
   id: string;
-  provider: string;
+  chat_provider: string;
+  embedding_provider: string;
+  reranking_provider?: string;
   model: string;
   embedding_model: string;
+  reranking_model?: string;
   system_prompt: string;
   api_key?: string;
   base_url?: string;

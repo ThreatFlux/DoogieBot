@@ -346,62 +346,7 @@ class HybridRetriever:
                 logger.error(f"Error in FAISS retrieval: {str(e)}")
                 # We've already tried the direct graph search method at the beginning
                 # If we're here, it means the direct method failed or didn't find results
-                # Let's try a simpler approach as fallback
-                logger.info("Using Graph RAG with simplified search as fallback")
-                
-                # Get a sample of nodes from the graph
-                import random
-                try:
-                    # Get the total number of nodes
-                    node_count = len(self.graph_rag.graph.nodes)
-                    
-                    # If we have too many nodes, sample a subset
-                    max_nodes_to_check = 200
-                    if node_count > max_nodes_to_check:
-                        # Sample random nodes
-                        sampled_nodes = random.sample(list(self.graph_rag.graph.nodes), max_nodes_to_check)
-                    else:
-                        # Use all nodes
-                        sampled_nodes = list(self.graph_rag.graph.nodes)
-                    
-                    # Simple keyword matching
-                    query_lower = query.lower()
-                    query_terms = query_lower.split()
-                    
-                    # Check each node for keyword matches
-                    for node_id in sampled_nodes:
-                        node_data = self.graph_rag.graph.nodes[node_id]
-                        content = node_data.get('content', '').lower()
-                        
-                        # Check if any query term is in the content
-                        if any(term in content for term in query_terms):
-                            # Calculate a simple score based on term frequency
-                            score = sum(content.count(term) for term in query_terms) / len(query_terms)
-                            
-                            # Add to results
-                            graph_results.append({
-                                'id': node_id,
-                                'content': node_data.get('content'),
-                                'type': node_data.get('type'),
-                                'score': score,
-                                'metadata': node_data.get('metadata', {}),
-                                'source': 'graph_fallback'
-                            })
-                    
-                    # Sort by score and limit
-                    graph_results.sort(key=lambda x: x.get('score', 0), reverse=True)
-                    graph_results = graph_results[:top_k]
-                    
-                except Exception as graph_error:
-                    logger.error(f"Error in simplified graph search: {str(graph_error)}")
-                    # Continue with empty results
-                
-                # Process results if we got any
-                if graph_results:
-                    all_results.extend(graph_results)
-                    logger.info(f"Graph RAG fallback retrieval completed in {time.time() - graph_start:.2f}s, found {len(graph_results)} results")
-                else:
-                    logger.warning("No results from graph RAG fallback search")
+                # No graph fallback needed here as the direct graph search was already attempted
             except Exception as e:
                 logger.error(f"Error in graph retrieval: {str(e)}", exc_info=True)
                 # Continue with other results even if graph search fails

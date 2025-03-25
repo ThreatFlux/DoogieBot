@@ -114,12 +114,12 @@ class FAISSStore:
             logger.warning("Index is empty. No results returned.")
             return []
         
-        # Ensure the index is built
-        if not getattr(self.index, '_n_items', None):
-            logger.warning("Index is not built. Building index now.")
+        
+        # Ensure the index is built (check if it has items)
+        if self.index.get_n_items() <= 0:
+            logger.warning("Index has 0 items. Building index now.")
             self.index.build(10)  # 10 trees is a good default
         
-        # Search index
         indices, distances = self.index.get_nns_by_vector(
             query_embedding, 
             min(top_k, len(self.doc_ids)), 

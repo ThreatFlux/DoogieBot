@@ -162,6 +162,23 @@ We have completed the initial setup phase (Phase 1) and the frontend development
       - Added flex constraints for better content flow
       - Enhanced scroll behavior during message streaming
       - Fixed sidebar shrinking issues
+    - Fixed FastAPI ResponseValidationError for datetime fields:
+      - Explicitly set created_at and updated_at in embedding_config and llm_config services
+      - Added null checks for datetime fields to ensure they're never None
+      - Updated create_config, update_config, and set_active_config methods in both services
+    - Fixed Ollama configuration issue:
+      - Modified OllamaClient to not require base_url parameter
+      - Changed error to warning when base_url is not set
+      - Made the UI more flexible for Ollama configuration
+    - Fixed database handling for empty settings:
+      - Added null checks for datetime fields in all config services (embedding, llm, reranking)
+      - Fixed duplicate return statements in service methods
+      - Ensured all database queries properly handle None values for datetime fields
+      - Fixed indentation issues in LLM routes file while maintaining compatibility with frontend URL paths
+      - Created database migration to add missing embedding_config and reranking_config tables
+      - Added reranking endpoints to LLM router for consistency with embedding endpoints
+      - Updated frontend to use new LLM router endpoints with fallback to original endpoints
+      - Fixed route order in reranking router to prevent path conflicts
     
     4. **API URL Handling**
    - Implemented a unified approach for API URL handling in frontend/services/api.ts

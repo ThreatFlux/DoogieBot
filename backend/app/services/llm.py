@@ -9,6 +9,8 @@ from app.llm.factory import LLMFactory
 from app.llm.base import LLMClient
 from app.services.chat import ChatService
 from app.services.llm_config import LLMConfigService
+from app.services.embedding_config import EmbeddingConfigService
+from app.services.reranking_config import RerankingConfigService # Added import
 from app.rag.hybrid_retriever import HybridRetriever
 from app.core.config import settings
 
@@ -46,25 +48,53 @@ class LLMService:
         """
         self.db = db
         
-        # Get active configuration from database
-        active_config = LLMConfigService.get_active_config(db)
+        # Get active configurations from database
+        chat_config = LLMConfigService.get_active_config(db)
+        embedding_config = EmbeddingConfigService.get_active_config(db)
         
         # Use provided values or fall back to active config or defaults
-        self.provider = provider or (active_config.provider if active_config else settings.DEFAULT_LLM_PROVIDER)
-        self.model = model or (active_config.model if active_config else settings.DEFAULT_CHAT_MODEL)
-        self.system_prompt = system_prompt or (active_config.system_prompt if active_config else settings.DEFAULT_SYSTEM_PROMPT)
-        self.api_key = api_key or (active_config.api_key if active_config else None)
-        self.base_url = base_url or (active_config.base_url if active_config else None)
-        self.embedding_model = embedding_model or (active_config.embedding_model if active_config else None)
+        self.provider = provider or (chat_config.chat_provider if chat_config else settings.DEFAULT_LLM_PROVIDER)
+        self.model = model or (chat_config.model if chat_config else settings.DEFAULT_CHAT_MODEL)
+        self.system_prompt = system_prompt or (chat_config.system_prompt if chat_config else settings.DEFAULT_SYSTEM_PROMPT)
+        self.api_key = api_key or (chat_config.api_key if chat_config else None)
+        self.base_url = base_url or (chat_config.base_url if chat_config else None)
         
-        # Create LLM client
-        self.client = LLMFactory.create_client(
-            provider=self.provider,
-            model=self.model,
-            api_key=self.api_key,
-            base_url=self.base_url,
-            embedding_model=self.embedding_model
-        )
+        # Embedding configuration
+        self.embedding_model = embedding_model or (embedding_config.model if embedding_config else None)
+        embedding_provider = embedding_config.provider if embedding_config else None
+        
+        # Create LLM clients using separate configurations
+        if chat_config and embedding_config:
+            client_result = LLMFactory.create_separate_clients(
+                chat_config={
+                    'provider': self.provider,
+                    'model': self.model,
+                    'api_key': self.api_key,
+                    'base_url': self.base_url
+                },
+                embedding_config={
+                    'provider': embedding_provider,
+                    'model': self.embedding_model,
+                    'api_key': embedding_config.api_key,
+                    'base_url': embedding_config.base_url
+                }
+            )
+        else:
+            # Fallback to legacy method if either config is missing
+            client_result = LLMFactory.create_client(
+                provider=self.provider,
+                model=self.model,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                embedding_model=self.embedding_model,
+                embedding_provider=embedding_provider
+            )
+        
+        # Handle single client or separate clients
+        if isinstance(client_result, tuple):
+            self.chat_client, self.embedding_client = client_result
+        else:
+            self.chat_client = self.embedding_client = client_result
         
         # Create retriever for RAG
         self.retriever = HybridRetriever(db)
@@ -119,18 +149,18 @@ class LLMService:
         
         # Format messages for the LLM
         formatted_messages = [
-            self.client.format_chat_message("system", system_message)
+            self.chat_client.format_chat_message("system", system_message)
         ]
         
         # Add chat history
         for msg in messages:
             formatted_messages.append(
-                self.client.format_chat_message(msg.role, msg.content)
+                self.chat_client.format_chat_message(msg.role, msg.content)
             )
         
         # Add user message
         formatted_messages.append(
-            self.client.format_chat_message("user", user_message)
+            self.chat_client.format_chat_message("user", user_message)
         )
         
         # Log message count and roles for debugging
@@ -187,7 +217,7 @@ class LLMService:
             )
         else:
             # Get response from LLM
-            response = await self.client.generate(
+            response = await self.chat_client.generate(
                 formatted_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -247,7 +277,7 @@ class LLMService:
 
             try:
                 response_stream = await asyncio.wait_for(
-                    self.client.generate(
+                    self.chat_client.generate(
                         formatted_messages,
                         temperature=temperature,
                         max_tokens=max_tokens,
@@ -376,21 +406,21 @@ class LLMService:
             List of relevant documents or None if no results
         """
         # Get top_k from config if not provided
+        active_config = LLMConfigService.get_active_config(self.db)
         if top_k is None:
             # Check if there's a top_k value in the active config
-            active_config = LLMConfigService.get_active_config(self.db)
             if active_config and active_config.config and 'rag_top_k' in active_config.config:
                 top_k = active_config.config.get('rag_top_k')
             else:
                 # Default to 3 if not configured
                 top_k = 3
         try:
-            # Generate query embedding using the LLM client
+            # Generate query embedding using the embedding client
             logger.info(f"Generating embedding for query: {query[:50]}...")
             query_embedding = None
             try:
                 # Get embedding for the query
-                embeddings = await self.client.get_embeddings([query])
+                embeddings = await self.embedding_client.get_embeddings([query])
                 if embeddings and len(embeddings) > 0:
                     query_embedding = embeddings[0]
                     logger.info(f"Successfully generated query embedding with dimension {len(query_embedding)}")
@@ -420,6 +450,61 @@ class LLMService:
                     "source": result.get("source")
                 })
             
+            # Apply reranking if enabled
+            use_reranking = active_config and active_config.config and active_config.config.get('use_reranking', False)
+            if use_reranking and context:
+                # Fetch the dedicated active reranking configuration
+                reranking_config = RerankingConfigService.get_active_config(self.db)
+
+                if reranking_config:
+                    # Find the specific LLM config for the reranker's provider to get API key/base URL
+                    # TODO: Consider adding a more direct get_config_by_provider method if performance is an issue
+                    all_llm_configs = LLMConfigService.get_all_configs(self.db)
+                    llm_config_for_reranker = next((c for c in all_llm_configs if c.provider == reranking_config.provider), None)
+
+                    if llm_config_for_reranker:
+                        logger.info(f"Reranking results using dedicated config: {reranking_config.provider}/{reranking_config.model}")
+                        try:
+                            # Create a reranking client using dedicated reranking config and its corresponding LLM config details
+                            # Use _create_single_client directly to avoid legacy logic mixing embedding models
+                            reranking_client = LLMFactory._create_single_client(
+                                provider=reranking_config.provider,
+                                model=reranking_config.model,
+                                api_key=llm_config_for_reranker.api_key,
+                                base_url=llm_config_for_reranker.base_url
+                            )
+
+                            if not reranking_client:
+                                logger.warning("Failed to create reranking client using _create_single_client")
+                                # Continue without reranking if client creation fails
+                            else:
+                                # Extract document contents and prepare for reranking
+                                documents = [doc["content"] for doc in context]
+
+                                # Get reranked scores
+                                reranked_scores = await self._rerank_documents(reranking_client, query, documents)
+
+                                # Update scores in context
+                                if reranked_scores and len(reranked_scores) == len(context):
+                                    for i, score in enumerate(reranked_scores):
+                                        context[i]["score"] = score
+
+                                    # Sort by new scores (descending)
+                                    context.sort(key=lambda x: x["score"], reverse=True)
+
+                                    logger.info(f"Successfully reranked {len(context)} documents")
+                                else:
+                                    logger.warning(f"Reranking returned {len(reranked_scores) if reranked_scores else 0} scores for {len(context)} documents. Using original ranking.")
+                        except Exception as e:
+                            logger.error(f"Error during reranking process: {str(e)}")
+                            # Continue with original ranking if reranking fails
+                    else:
+                        logger.warning(f"Reranking enabled, active reranking config found ({reranking_config.provider}/{reranking_config.model}), but no matching LLM config found for provider '{reranking_config.provider}'. Cannot get API key/base URL. Skipping reranking.")
+                else:
+                    # Only log warning if use_reranking was explicitly true in the main LLM config, but no dedicated reranking config exists
+                    if active_config and active_config.config and active_config.config.get('use_reranking', False):
+                         logger.warning("Reranking enabled in main LLM config, but no active dedicated reranking configuration found in the database. Skipping reranking.")
+            
             return context
         except Exception as e:
             logger.error(f"Error getting RAG context: {str(e)}")
@@ -435,7 +520,75 @@ class LLMService:
         Returns:
             List of embedding vectors
         """
-        return await self.client.get_embeddings(texts)
+        return await self.embedding_client.get_embeddings(texts)
+    
+    async def _rerank_documents(self, reranking_client, query: str, documents: List[str]) -> List[float]:
+        """
+        Rerank documents based on their relevance to the query.
+        
+        Args:
+            reranking_client: LLM client for reranking
+            query: User query
+            documents: List of document contents to rerank
+            
+        Returns:
+            List of relevance scores for each document
+        """
+        if not documents:
+            return []
+        
+        try:
+            # If the reranking client has a specific rerank method, use it
+            if hasattr(reranking_client, 'rerank'):
+                scores = await reranking_client.rerank(query, documents)
+                return scores
+            
+            # Check if the client has embedding capabilities
+            if hasattr(reranking_client, 'get_embeddings'):
+                # Use embeddings to calculate similarity
+                try:
+                    query_embedding = await reranking_client.get_embeddings([query])
+                    if not query_embedding or len(query_embedding) == 0:
+                        logger.warning("Failed to generate query embedding for reranking")
+                        return []
+                    
+                    query_embedding = query_embedding[0]
+                    
+                    # Get embeddings for all documents
+                    doc_embeddings = await reranking_client.get_embeddings(documents)
+                    if not doc_embeddings or len(doc_embeddings) != len(documents):
+                        logger.warning(f"Failed to generate document embeddings for reranking: got {len(doc_embeddings) if doc_embeddings else 0} for {len(documents)} documents")
+                        return []
+                except Exception as e:
+                    logger.warning(f"Error using embeddings for reranking: {str(e)}")
+                    # Return empty scores, will fall back to original ranking
+                    return []
+            else:
+                logger.warning("Reranking client does not support embeddings, falling back to original ranking")
+                return []
+            
+            # Calculate cosine similarity between query and each document
+            scores = []
+            for doc_embedding in doc_embeddings:
+                # Normalize embeddings
+                query_norm = sum(x*x for x in query_embedding) ** 0.5
+                doc_norm = sum(x*x for x in doc_embedding) ** 0.5
+                
+                if query_norm == 0 or doc_norm == 0:
+                    scores.append(0.0)
+                    continue
+                
+                # Calculate dot product
+                dot_product = sum(q*d for q, d in zip(query_embedding, doc_embedding))
+                
+                # Calculate cosine similarity
+                similarity = dot_product / (query_norm * doc_norm)
+                scores.append(similarity)
+            
+            return scores
+        except Exception as e:
+            logger.error(f"Error during document reranking: {str(e)}")
+            return []
     
     async def get_available_models(self) -> tuple[List[str], List[str]]:
         """
@@ -455,8 +608,8 @@ class LLMService:
             
             # Ollama models - use the client to get actual models
             elif self.provider == "ollama":
-                if hasattr(self.client, 'list_models'):
-                    models = await self.client.list_models()
+                if hasattr(self.chat_client, 'list_models'):
+                    models = await self.chat_client.list_models()
                     # For Ollama, all models can be used for both chat and embeddings
                     chat_models = models
                     embedding_models = models
@@ -472,24 +625,38 @@ class LLMService:
             
             # OpenRouter models - fetch from API and group by provider
             elif self.provider == "openrouter":
-                if hasattr(self.client, 'list_models'):
-                    models = await self.client.list_models()
-                    # Group models by provider prefix
-                    model_groups = {}
-                    for model in models:
-                        if model.get("id"):
-                            provider = model["id"].split("/")[0] if "/" in model["id"] else "other"
-                            if provider not in model_groups:
-                                model_groups[provider] = []
-                            model_groups[provider].append(model["id"])
-                    
-                    # Sort groups and models alphabetically
-                    chat_models = []
-                    for provider in sorted(model_groups.keys()):
-                        chat_models.extend(sorted(model_groups[provider]))
-                    
-                    # Embedding models (OpenRouter mostly uses OpenAI embeddings)
-                    embedding_models = ["openai/text-embedding-ada-002"]
+                if hasattr(self.chat_client, 'list_models'):
+                    try:
+                        models = await self.chat_client.list_models()
+                        logger.info(f"Received {len(models)} models from OpenRouter")
+                        logger.info(f"OpenRouter models type: {type(models)}")
+                        logger.info(f"First few OpenRouter models: {models[:3] if len(models) > 3 else models}")
+                        
+                        # Group models by provider prefix
+                        model_groups = {}
+                        for model in models:
+                            logger.info(f"Processing model: {model}")
+                            if model.get("id"):
+                                provider = model["id"].split("/")[0] if "/" in model["id"] else "other"
+                                if provider not in model_groups:
+                                    model_groups[provider] = []
+                                model_groups[provider].append(model["id"])
+                        
+                        # Sort groups and models alphabetically
+                        chat_models = []
+                        for provider in sorted(model_groups.keys()):
+                            chat_models.extend(sorted(model_groups[provider]))
+                        
+                        logger.info(f"Processed {len(chat_models)} chat models from OpenRouter")
+                        logger.info(f"Final OpenRouter chat models: {chat_models}")
+                        
+                        # Embedding models (OpenRouter mostly uses OpenAI embeddings)
+                        embedding_models = ["openai/text-embedding-ada-002"]
+                    except Exception as e:
+                        logger.error(f"Error processing OpenRouter models: {str(e)}")
+                        # Fallback if there's an error
+                        chat_models = ["openai/gpt-3.5-turbo", "openai/gpt-4", "anthropic/claude-2"]
+                        embedding_models = ["openai/text-embedding-ada-002"]
                 else:
                     # Fallback if list_models is not implemented
                     chat_models = ["openai/gpt-3.5-turbo", "openai/gpt-4", "anthropic/claude-2"]

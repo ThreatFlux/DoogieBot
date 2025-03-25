@@ -27,6 +27,7 @@ const AdminLayout = ({
     { href: '/admin/llm', label: 'LLM Configuration' },
     { href: '/admin/rag', label: 'RAG Management' },
     { href: '/admin/chats', label: 'Chat Review' },
+    { href: '/admin/system', label: 'System Settings' },
   ];
 
   return (

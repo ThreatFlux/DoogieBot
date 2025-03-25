@@ -1,59 +1,71 @@
-import { useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import AdminLayout from '../../components/layout/AdminLayout';
-import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card';
-import { Input } from '../../components/ui/Input';
-import withAdmin from '@/utils/withAdmin';
+import { withAdmin } from '../../utils/withAdmin';
+import {
+  SystemPromptSection,
+  RAGConfigSection,
+  ModelSelectionSection,
+  APIKeysSection,
+  ProviderConfig
+} from '../../components/admin/llm';
 import {
   getLLMProviders,
   getAllLLMConfigs,
-  createLLMConfig,
-  updateLLMConfig,
-  activateLLMConfig,
-  deleteLLMConfig,
-  getProviderModels
-} from '@/services/llm';
-import { LLMConfig } from '@/types';
+  getAllEmbeddingConfigs,
+  getAllRerankingConfigs
+} from '../../services/llm';
 
-// Define the provider interface
-interface Provider {
-  id: string;
-  name: string;
-  available: boolean;
-  default_model: string;
-  requires_api_key: boolean;
-  requires_base_url: boolean;
-  available_models?: string[];
-  embedding_models?: string[];
-}
-
-// Define the provider configuration interface
-interface ProviderConfig {
-  id: string;
-  config: LLMConfig | null;
-  enabled: boolean;
-  api_key: string;
-  base_url: string;
-  model: string;
-  embedding_model: string;
-  system_prompt: string;
-  available_models: string[];
-  embedding_models: string[];
-  isPolling: boolean;
-  filteredModels?: string[];
-}
-const LLMConfiguration = () => {
-  const [providers, setProviders] = useState<Record<string, Provider>>({});
+const LLMConfiguration: React.FC = () => {
+  // State for providers and configs
+  const [providers, setProviders] = useState<Record<string, any>>({});
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([]);
-  const [configs, setConfigs] = useState<LLMConfig[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [chatConfigs, setChatConfigs] = useState<any[]>([]);
+  const [embeddingConfigs, setEmbeddingConfigs] = useState<any[]>([]);
+  const [rerankingConfigs, setRerankingConfigs] = useState<any[]>([]);
+  
+  // State for active configs
+  const [activeChatConfig, setActiveChatConfig] = useState<any | null>(null);
+  const [activeEmbeddingConfig, setActiveEmbeddingConfig] = useState<any | null>(null);
+  const [activeRerankingConfig, setActiveRerankingConfig] = useState<any | null>(null);
+  
+  // State for system prompt
+  const [systemPrompt, setSystemPrompt] = useState<string>('You are Doogie, a helpful AI assistant.');
+  
+  // State for chat model selection
+  const [selectedChatProvider, setSelectedChatProvider] = useState<string>('');
+  const [selectedChatModel, setSelectedChatModel] = useState<string>('');
+  const [availableChatModels, setAvailableChatModels] = useState<string[]>([]);
+  const [filteredChatModels, setFilteredChatModels] = useState<string[]>([]);
+  const [isPollingChatModels, setIsPollingChatModels] = useState<boolean>(false);
+  
+  // State for embedding model selection
+  const [selectedEmbeddingProvider, setSelectedEmbeddingProvider] = useState<string>('');
+  const [selectedEmbeddingModel, setSelectedEmbeddingModel] = useState<string>('');
+  const [availableEmbeddingModels, setAvailableEmbeddingModels] = useState<string[]>([]);
+  const [filteredEmbeddingModels, setFilteredEmbeddingModels] = useState<string[]>([]);
+  const [isPollingEmbeddingModels, setIsPollingEmbeddingModels] = useState<boolean>(false);
+  
+  // State for reranking model selection
+  const [selectedRerankingProvider, setSelectedRerankingProvider] = useState<string>('');
+  const [selectedRerankingModel, setSelectedRerankingModel] = useState<string>('');
+  const [availableRerankingModels, setAvailableRerankingModels] = useState<string[]>([]);
+  const [filteredRerankingModels, setFilteredRerankingModels] = useState<string[]>([]);
+  const [isPollingRerankingModels, setIsPollingRerankingModels] = useState<boolean>(false);
+  
+  // UI state
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [systemPrompt, setSystemPrompt] = useState('You are Doogie, a helpful AI assistant.');
 
-  // Function to load data from the backend
+  // Load data on component mount
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Function to load all data
   const loadData = async () => {
     setLoading(true);
     setError(null);
+    
     try {
       // Load providers
       const providersResponse = await getLLMProviders();
@@ -63,28 +75,75 @@ const LLMConfiguration = () => {
       
       const providersData = providersResponse.providers || {};
       setProviders(providersData);
-
-      // Load configurations
-      const configsResponse = await getAllLLMConfigs();
-      if (configsResponse.error) {
-        throw new Error(configsResponse.error);
+      
+      // Load chat configurations
+      const chatConfigsResponse = await getAllLLMConfigs();
+      if (chatConfigsResponse.error) {
+        throw new Error(chatConfigsResponse.error);
       }
       
-      const configsData = configsResponse.configs || [];
-      setConfigs(configsData);
+      const chatConfigsData = chatConfigsResponse.configs || [];
+      setChatConfigs(chatConfigsData);
+      
+      // Load embedding configurations
+      const embeddingConfigsResponse = await getAllEmbeddingConfigs();
+      if (embeddingConfigsResponse.error) {
+        throw new Error(embeddingConfigsResponse.error);
+      }
+      
+      const embeddingConfigsData = embeddingConfigsResponse.configs || [];
+      setEmbeddingConfigs(embeddingConfigsData);
+      
+      // Load reranking configurations
+      const rerankingConfigsResponse = await getAllRerankingConfigs();
+      if (rerankingConfigsResponse.error) {
+        throw new Error(rerankingConfigsResponse.error);
+      }
+      
+      const rerankingConfigsData = rerankingConfigsResponse.configs || [];
+      setRerankingConfigs(rerankingConfigsData);
+
+      // Set active configs
+      const activeChatConfig = chatConfigsData.find((c: any) => c.is_active);
+      setActiveChatConfig(activeChatConfig || null);
+      
+      const activeEmbeddingConfig = embeddingConfigsData.find((c: any) => c.is_active);
+      setActiveEmbeddingConfig(activeEmbeddingConfig || null);
+      
+      const activeRerankingConfig = rerankingConfigsData.find((c: any) => c.is_active);
+      setActiveRerankingConfig(activeRerankingConfig || null);
 
       // Initialize provider configs
       const initialProviderConfigs = Object.entries(providersData).map(([id, info]: [string, any]) => {
-        const existingConfig = configsData.find(c => c.provider === id);
+        // Find matching chat config
+        const chatConfig = chatConfigsData.find((c: any) => c.chat_provider === id);
+        // Find matching embedding config
+        const embeddingConfig = embeddingConfigsData.find((c: any) => c.provider === id);
+        
+        // Only set base URL for providers that need it
+        let baseUrl = '';
+        if (id === 'ollama') {
+          // Ollama requires a base URL
+          baseUrl = chatConfig?.base_url || embeddingConfig?.base_url || 'http://localhost:11434';
+        } else if (id === 'openrouter') {
+          // OpenRouter has a fixed base URL that should not be changed
+          baseUrl = 'https://openrouter.ai/api';
+        } else {
+          // Other providers like OpenAI don't need a base URL
+          baseUrl = '';
+        }
+        
         return {
           id,
-          config: existingConfig || null,
-          enabled: existingConfig?.is_active || false,
-          api_key: existingConfig?.api_key || '',
-          base_url: existingConfig?.base_url || '',
-          model: existingConfig?.model || info.default_model || '',
-          embedding_model: existingConfig?.embedding_model || '',
-          system_prompt: existingConfig?.system_prompt || 'You are Doogie, a helpful AI assistant.',
+          chatConfig: chatConfig || null,
+          embeddingConfig: embeddingConfig || null,
+          enabled: (chatConfig?.is_active || embeddingConfig?.is_active) || false,
+          api_key: chatConfig?.api_key || embeddingConfig?.api_key || '',
+          base_url: baseUrl,
+          model: chatConfig?.model || info.default_model || '',
+          embedding_model: embeddingConfig?.model || '',
+          embedding_provider: embeddingConfig?.provider || id,
+          system_prompt: chatConfig?.system_prompt || 'You are Doogie, a helpful AI assistant.',
           available_models: [],
           embedding_models: [],
           isPolling: false
@@ -93,282 +152,33 @@ const LLMConfiguration = () => {
 
       setProviderConfigs(initialProviderConfigs);
       
-      // Update systemPrompt state with the active configuration's system prompt
-      const activeConfig = configsData.find(c => c.is_active);
-      if (activeConfig && activeConfig.system_prompt) {
-        setSystemPrompt(activeConfig.system_prompt);
+      // Update systemPrompt state with the active chat configuration's system prompt
+      if (activeChatConfig) {
+        if (activeChatConfig.system_prompt) {
+          setSystemPrompt(activeChatConfig.system_prompt);
+        }
+        
+        // Set the selected chat provider and model based on active config
+        setSelectedChatProvider(activeChatConfig.chat_provider);
+        setSelectedChatModel(activeChatConfig.model);
+        
+        // Get reranking info from config
+        const rerankingProvider = activeChatConfig.config?.reranking_provider || '';
+        const rerankingModel = activeChatConfig.config?.reranking_model || '';
+        setSelectedRerankingProvider(rerankingProvider);
+        setSelectedRerankingModel(rerankingModel);
+      }
+      
+      // Set the selected embedding provider and model based on active embedding config
+      if (activeEmbeddingConfig) {
+        setSelectedEmbeddingProvider(activeEmbeddingConfig.provider);
+        setSelectedEmbeddingModel(activeEmbeddingConfig.model);
       }
     } catch (err) {
       console.error('Failed to load LLM data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load LLM data');
     } finally {
       setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  // Function to toggle a provider's enabled state
-  const toggleProvider = async (providerId: string) => {
-    // Find the provider config
-    const providerConfig = providerConfigs.find(pc => pc.id === providerId);
-    if (!providerConfig) return;
-
-    try {
-      // If enabling, create or activate the config
-      if (!providerConfig.enabled) {
-        // If config exists, activate it
-        if (providerConfig.config) {
-          const response = await activateLLMConfig(providerConfig.config.id);
-          if (response.error) {
-            throw new Error(response.error);
-          }
-        } else {
-          // Create new config
-          const newConfig = {
-            provider: providerId,
-            model: providerConfig.model,
-            embedding_model: providerConfig.embedding_model,
-            system_prompt: systemPrompt, // Use the current system prompt value
-            api_key: providerConfig.api_key,
-            base_url: providerConfig.base_url
-          };
-          
-          const response = await createLLMConfig(newConfig);
-          if (response.error) {
-            throw new Error(response.error);
-          }
-          
-          // Activate the new config
-          if (response.config) {
-            await activateLLMConfig(response.config.id);
-          }
-        }
-      } else {
-        // If disabling and another provider is available, activate that one
-        const otherProvider = providerConfigs.find(pc => pc.id !== providerId && pc.config);
-        if (otherProvider && otherProvider.config) {
-          await activateLLMConfig(otherProvider.config.id);
-        }
-      }
-      
-      // Reload data to reflect changes
-      await loadData();
-    } catch (err) {
-      console.error('Failed to toggle provider:', err);
-      setError(err instanceof Error ? err.message : 'Failed to toggle provider');
-    }
-  };
-
-  // Function to update API key (local state only)
-  const updateApiKey = (providerId: string, apiKey: string) => {
-    // Update local state only
-    setProviderConfigs(prevConfigs =>
-      prevConfigs.map(pc =>
-        pc.id === providerId ? { ...pc, api_key: apiKey } : pc
-      )
-    );
-  };
-
-  // Function to update base URL (local state only)
-  const updateBaseUrl = (providerId: string, baseUrl: string) => {
-    // Update local state only
-    setProviderConfigs(prevConfigs =>
-      prevConfigs.map(pc =>
-        pc.id === providerId ? { ...pc, base_url: baseUrl } : pc
-      )
-    );
-  };
-
-  // Function to update model (local state only)
-  const updateModel = (providerId: string, model: string) => {
-    // Update local state only
-    setProviderConfigs(prevConfigs =>
-      prevConfigs.map(pc =>
-        pc.id === providerId ? { ...pc, model } : pc
-      )
-    );
-  };
-
-  // Function to update embedding model (local state only)
-  const updateEmbeddingModel = (providerId: string, embedding_model: string) => {
-    // Update local state only
-    setProviderConfigs(prevConfigs =>
-      prevConfigs.map(pc =>
-        pc.id === providerId ? { ...pc, embedding_model } : pc
-      )
-    );
-  };
-
-  // Function to save provider configuration
-  const saveProviderConfig = async (providerId: string) => {
-    // Find the provider config
-    const providerConfig = providerConfigs.find(pc => pc.id === providerId);
-    if (!providerConfig) return;
-
-    try {
-      // If config exists, update it
-      if (providerConfig.config) {
-        // First update the config
-        const response = await updateLLMConfig(providerConfig.config.id, {
-          api_key: providerConfig.api_key,
-          base_url: providerConfig.base_url,
-          model: providerConfig.model,
-          embedding_model: providerConfig.embedding_model
-        });
-        
-        if (response.error) {
-          throw new Error(response.error);
-        }
-
-        // Then activate the config to make it take effect immediately
-        await activateLLMConfig(providerConfig.config.id);
-        
-        setError(null);
-        // Reload data to reflect changes
-        await loadData();
-        // Show success message after data is reloaded
-        alert("Configuration saved successfully!");
-    } else {
-        // Create new config
-        const newConfig = {
-          provider: providerId,
-          model: providerConfig.model,
-          embedding_model: providerConfig.embedding_model,
-          system_prompt: systemPrompt, // Use the current system prompt value
-          api_key: providerConfig.api_key,
-          base_url: providerConfig.base_url
-        };
-        
-        // First create the new config
-        const response = await createLLMConfig(newConfig);
-        if (response.error) {
-          throw new Error(response.error);
-        }
-        
-        if (response.config) {
-          // Then activate the new config
-          await activateLLMConfig(response.config.id);
-        }
-        
-        setError(null);
-        // Reload data to reflect changes
-        await loadData();
-        // Show success message after data is reloaded
-        alert("Configuration created successfully!");
-    }
-    } catch (err) {
-      console.error('Failed to save configuration:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save configuration');
-    }
-  };
-
-  // Function to update system prompt
-  const updateSystemPrompt = async () => {
-    // Find the active provider config
-    const activeProviderConfig = providerConfigs.find(pc => pc.enabled);
-    if (!activeProviderConfig || !activeProviderConfig.config) return;
-
-    try {
-      // Update the config
-      const response = await updateLLMConfig(activeProviderConfig.config.id, { system_prompt: systemPrompt });
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      
-      setError(null);
-      // Reload data to reflect changes
-      await loadData();
-      // Show success message after data is reloaded
-      alert("System prompt updated successfully!");
-    } catch (err) {
-      console.error('Failed to update system prompt:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update system prompt');
-    }
-  };
-  
-  // Function to update RAG configuration
-  const updateRAGConfig = async () => {
-    // Find the active config
-    const activeConfig = configs.find(config => config.is_active);
-    if (!activeConfig) return;
-    
-    try {
-      // Get the current rag_top_k value
-      const rag_top_k = activeConfig.config?.rag_top_k || 3;
-      
-      // Update the config
-      // Use type assertion to tell TypeScript that this object can include a config property
-      const response = await updateLLMConfig(activeConfig.id, {
-        config: {
-          ...activeConfig.config,
-          rag_top_k
-        }
-      } as any); // Type assertion to bypass TypeScript check
-      
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      
-      setError(null);
-      // Reload data to reflect changes
-      await loadData();
-      // Show success message after data is reloaded
-      alert("RAG configuration updated successfully!");
-    } catch (err) {
-      console.error('Failed to update RAG configuration:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update RAG configuration');
-    }
-  };
-
-  // Function to poll for available models
-  const pollAvailableModels = async (providerId: string) => {
-    // Find the provider config
-    const providerConfig = providerConfigs.find(pc => pc.id === providerId);
-    if (!providerConfig) return;
-
-    // Set polling state
-    setProviderConfigs(prevConfigs =>
-      prevConfigs.map(pc =>
-        pc.id === providerId ? { ...pc, isPolling: true } : pc
-      )
-    );
-
-    try {
-      // Call the API to get available models
-      const response = await getProviderModels(
-        providerId,
-        providerConfig.api_key,
-        providerConfig.base_url
-      );
-      
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      
-      // Update provider config with available models
-      setProviderConfigs(prevConfigs =>
-        prevConfigs.map(pc =>
-          pc.id === providerId ? {
-            ...pc,
-            available_models: response.chatModels || [],
-            embedding_models: response.embeddingModels || [],
-            isPolling: false
-          } : pc
-        )
-      );
-    } catch (err) {
-      console.error('Failed to poll available models:', err);
-      setError(err instanceof Error ? err.message : 'Failed to poll available models');
-      
-      // Reset polling state
-      setProviderConfigs(prevConfigs =>
-        prevConfigs.map(pc =>
-          pc.id === providerId ? { ...pc, isPolling: false } : pc
-        )
-      );
     }
   };
 
@@ -380,8 +190,14 @@ const LLMConfiguration = () => {
         </div>
         
         {error && (
-          <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-md">
-            {error}
+          <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-md flex justify-between items-center">
+            <div>{error}</div>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+            >
+              ✕
+            </button>
           </div>
         )}
         
@@ -389,297 +205,84 @@ const LLMConfiguration = () => {
           <div className="text-center py-8">Loading...</div>
         ) : (
           <>
-            <Card>
-              <div className="p-4">
-                <h3 className="text-lg font-semibold mb-4">System Prompt</h3>
-                <div className="space-y-4">
-                  <div>
-                    <textarea
-                      className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                      value={systemPrompt}
-                      onChange={(e) => setSystemPrompt(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                  <div>
-                    <Button onClick={updateSystemPrompt}>Update System Prompt</Button>
-                  </div>
-                </div>
-              </div>
-            </Card>
+            {/* System Prompt Section */}
+            <SystemPromptSection
+              systemPrompt={systemPrompt}
+              setSystemPrompt={setSystemPrompt}
+              activeChatConfig={activeChatConfig}
+              onUpdate={loadData}
+            />
             
-            <Card>
-              <div className="p-4">
-                <h3 className="text-lg font-semibold mb-4">RAG Configuration</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Number of RAG Results (top_k)
-                    </label>
-                    <div className="mt-1 flex">
-                      <Input
-                        type="number"
-                        min="1"
-                        max="20"
-                        className="flex-1"
-                        value={(configs.find(c => c.is_active)?.config?.rag_top_k) || 3}
-                        onChange={(e) => {
-                          const value = parseInt(e.target.value);
-                          if (value >= 1 && value <= 20) {
-                            setConfigs(prevConfigs =>
-                              prevConfigs.map(config =>
-                                config.is_active ?
-                                  {...config, config: {...(config.config || {}), rag_top_k: value}} :
-                                  config
-                              )
-                            );
-                          }
-                        }}
-                      />
-                    </div>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Controls how many relevant documents are retrieved for RAG. Default: 3
-                    </p>
-                  </div>
-                  <div>
-                    <Button onClick={updateRAGConfig}>Update RAG Configuration</Button>
-                  </div>
-                </div>
-              </div>
-            </Card>
+            {/* RAG Configuration Section */}
+            <RAGConfigSection
+              activeChatConfig={activeChatConfig}
+              selectedRerankingProvider={selectedRerankingProvider}
+              selectedRerankingModel={selectedRerankingModel}
+              onUpdate={loadData}
+            />
             
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mt-6 mb-4">
-              LLM Services
-            </h2>
+            {/* Model Selection Section */}
+            <ModelSelectionSection
+              // Chat model props
+              selectedChatProvider={selectedChatProvider}
+              setSelectedChatProvider={setSelectedChatProvider}
+              selectedChatModel={selectedChatModel}
+              setSelectedChatModel={setSelectedChatModel}
+              availableChatModels={availableChatModels}
+              setAvailableChatModels={setAvailableChatModels}
+              filteredChatModels={filteredChatModels}
+              setFilteredChatModels={setFilteredChatModels}
+              isPollingChatModels={isPollingChatModels}
+              setIsPollingChatModels={setIsPollingChatModels}
+              
+              // Embedding model props
+              selectedEmbeddingProvider={selectedEmbeddingProvider}
+              setSelectedEmbeddingProvider={setSelectedEmbeddingProvider}
+              selectedEmbeddingModel={selectedEmbeddingModel}
+              setSelectedEmbeddingModel={setSelectedEmbeddingModel}
+              availableEmbeddingModels={availableEmbeddingModels}
+              setAvailableEmbeddingModels={setAvailableEmbeddingModels}
+              filteredEmbeddingModels={filteredEmbeddingModels}
+              setFilteredEmbeddingModels={setFilteredEmbeddingModels}
+              isPollingEmbeddingModels={isPollingEmbeddingModels}
+              setIsPollingEmbeddingModels={setIsPollingEmbeddingModels}
+              
+              // Reranking model props
+              selectedRerankingProvider={selectedRerankingProvider}
+              setSelectedRerankingProvider={setSelectedRerankingProvider}
+              selectedRerankingModel={selectedRerankingModel}
+              setSelectedRerankingModel={setSelectedRerankingModel}
+              availableRerankingModels={availableRerankingModels}
+              setAvailableRerankingModels={setAvailableRerankingModels}
+              filteredRerankingModels={filteredRerankingModels}
+              setFilteredRerankingModels={setFilteredRerankingModels}
+              isPollingRerankingModels={isPollingRerankingModels}
+              setIsPollingRerankingModels={setIsPollingRerankingModels}
+              
+              // Shared props
+              systemPrompt={systemPrompt}
+              providerConfigs={providerConfigs}
+              providers={providers}
+              activeChatConfig={activeChatConfig}
+              activeEmbeddingConfig={activeEmbeddingConfig}
+              activeRerankingConfig={activeRerankingConfig}
+              
+              // Callbacks
+              onUpdate={loadData}
+              setError={setError}
+            />
             
-            <div className="grid gap-4">
-              {providerConfigs.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  No LLM providers found.
-                </div>
-              ) : (
-                providerConfigs.map((providerConfig) => {
-                  const provider = providers[providerConfig.id];
-                  if (!provider) return null;
-                  
-                  return (
-                    <Card key={providerConfig.id}>
-                      <div className="p-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center space-x-4">
-                            <div className="relative inline-block w-12 h-6 mr-2">
-                              <input
-                                type="checkbox"
-                                id={`toggle-${providerConfig.id}`}
-                                className="sr-only"
-                                checked={providerConfig.enabled}
-                                onChange={() => toggleProvider(providerConfig.id)}
-                              />
-                              <label
-                                htmlFor={`toggle-${providerConfig.id}`}
-                                className={`absolute inset-0 rounded-full cursor-pointer transition-colors duration-300 ${
-                                  providerConfig.enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
-                                }`}
-                              >
-                                <span
-                                  className={`absolute inset-y-0 left-0 w-6 h-6 bg-white rounded-full shadow transform transition-transform duration-300 ${
-                                    providerConfig.enabled ? 'translate-x-6' : 'translate-x-0'
-                                  }`}
-                                />
-                              </label>
-                            </div>
-                            <div>
-                              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                                {providerConfig.id.charAt(0).toUpperCase() + providerConfig.id.slice(1)}
-                              </h3>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">
-                                {providerConfig.enabled ? (
-                                  <span className="text-green-600 dark:text-green-400">Active</span>
-                                ) : (
-                                  <span>Inactive</span>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          {provider.requires_api_key && (
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                API Key
-                              </label>
-                              <div className="mt-1 flex">
-                                <input
-                                  type="password"
-                                  className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600"
-                                  value={providerConfig.api_key}
-                                  onChange={(e) => updateApiKey(providerConfig.id, e.target.value)}
-                                  placeholder="Enter API key"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          
-                          {provider.requires_base_url && (
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Base URL
-                              </label>
-                              <div className="mt-1 flex">
-                                <input
-                                  type="text"
-                                  className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600"
-                                  value={providerConfig.base_url}
-                                  onChange={(e) => updateBaseUrl(providerConfig.id, e.target.value)}
-                                  placeholder="e.g., http://localhost:11434"
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Poll Models and Save Buttons */}
-                          <div className="flex space-x-2 mt-4">
-                            {(provider.requires_api_key || provider.requires_base_url) && (
-                              <Button
-                                variant="outline"
-                                onClick={() => pollAvailableModels(providerConfig.id)}
-                                disabled={providerConfig.isPolling}
-                              >
-                                {providerConfig.isPolling ? 'Polling...' : 'Poll Models'}
-                              </Button>
-                            )}
-                            
-                            <Button
-                              onClick={() => saveProviderConfig(providerConfig.id)}
-                            >
-                              Save Configuration
-                            </Button>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                              Chat Model
-                            </label>
-                            <div className="mt-1">
-                              {providerConfig.isPolling ? (
-                                <div className="text-sm text-gray-500 dark:text-gray-400">
-                                  Polling for available models...
-                                </div>
-                              ) : providerConfig.available_models.length > 0 ? (
-                                providerConfig.id === 'openrouter' ? (
-                                  <div className="relative">
-                                    <input
-                                      type="text"
-                                      placeholder="Search models..."
-                                      className="w-full p-2 mb-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                                      onChange={(e) => {
-                                        const searchTerm = e.target.value.toLowerCase();
-                                        const filtered = providerConfig.available_models.filter(model =>
-                                          model.toLowerCase().includes(searchTerm)
-                                        );
-                                        setProviderConfigs(prev =>
-                                          prev.map(pc =>
-                                            pc.id === providerConfig.id
-                                              ? {...pc, filteredModels: filtered}
-                                              : pc
-                                          )
-                                        );
-                                      }}
-                                    />
-                                    <div className="max-h-60 overflow-y-auto border rounded dark:bg-gray-700 dark:border-gray-600">
-                                      {Object.entries(
-                                        (providerConfig.filteredModels || providerConfig.available_models)
-                                          .reduce((acc: Record<string, string[]>, model: string) => {
-                                            const [provider] = model.split('/');
-                                            if (!acc[provider]) acc[provider] = [];
-                                            acc[provider].push(model);
-                                            return acc;
-                                          }, {} as Record<string, string[]>)
-                                      ).map(([provider, models]: [string, string[]]) => (
-                                        <div key={provider} className="border-b dark:border-gray-600">
-                                          <div className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-800">
-                                            {provider}
-                                          </div>
-                                          {models.map(model => (
-                                            <div
-                                              key={model}
-                                              className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 ${
-                                                providerConfig.model === model ? 'bg-blue-50 dark:bg-blue-900/30' : ''
-                                              }`}
-                                              onClick={() => updateModel(providerConfig.id, model)}
-                                            >
-                                              {model.split('/')[1] || model}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <select
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                                    value={providerConfig.model}
-                                    onChange={(e) => updateModel(providerConfig.id, e.target.value)}
-                                  >
-                                    {providerConfig.available_models.map((model) => (
-                                      <option key={model} value={model}>{model}</option>
-                                    ))}
-                                  </select>
-                                )
-                              ) : (
-                                <div className="flex">
-                                  <input
-                                    type="text"
-                                    className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600"
-                                    value={providerConfig.model}
-                                    onChange={(e) => updateModel(providerConfig.id, e.target.value)}
-                                    placeholder={`e.g., ${provider.default_model}`}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                              Embedding Model
-                            </label>
-                            <div className="mt-1">
-                              {providerConfig.isPolling ? (
-                                <div className="text-sm text-gray-500 dark:text-gray-400">
-                                  Polling for available models...
-                                </div>
-                              ) : providerConfig.embedding_models.length > 0 ? (
-                                <select
-                                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                                  value={providerConfig.embedding_model}
-                                  onChange={(e) => updateEmbeddingModel(providerConfig.id, e.target.value)}
-                                >
-                                  {providerConfig.embedding_models.map((model) => (
-                                    <option key={model} value={model}>{model}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <div className="flex">
-                                  <input
-                                    type="text"
-                                    className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600"
-                                    value={providerConfig.embedding_model}
-                                    onChange={(e) => updateEmbeddingModel(providerConfig.id, e.target.value)}
-                                    placeholder="e.g., text-embedding-ada-002"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
+            {/* API Keys Section */}
+            <APIKeysSection
+              providerConfigs={providerConfigs}
+              setProviderConfigs={setProviderConfigs}
+              providers={providers}
+              chatConfigs={chatConfigs}
+              embeddingConfigs={embeddingConfigs}
+              rerankingConfigs={rerankingConfigs}
+              onUpdate={loadData}
+              setError={setError}
+            />
           </>
         )}
       </div>

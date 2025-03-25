@@ -105,18 +105,26 @@ The project has completed its initial setup phase and frontend development phase
    - ✅ Fixed: Implemented consistent approach for API URL handling across the frontend
 
 3. **Chat Functionality**
-   - ✅ Fixed: "Cannot read properties of undefined (reading 'map')" errors by adding null checks
-   - ✅ Fixed: Added defensive coding to handle undefined values throughout the chat page
-   - ✅ Fixed: Updated the chat loading logic to properly initialize empty arrays
-   - ✅ Fixed: Chat creation process to handle undefined state
-   - ✅ Fixed: Proper error handling for streaming responses
-   - ✅ Fixed: SQLite IntegrityError with updated_at field by explicitly setting the timestamp
-   - ✅ Fixed: API routing by setting the correct baseURL in the API service to '/api/v1'
-   - ✅ Fixed: EventSource URL to use the correct path without the '/api/v1' prefix
-   - ✅ Fixed: Next.js proxy configuration to correctly route API requests to the backend
-   - ✅ Added: Rule in .clinerules about not modifying the Next.js proxy configuration and using '/api/v1' as the baseURL
-   - ✅ Fixed: Implemented unified approach for API URL handling with utility functions
-   - ✅ Fixed: Chat interface scrolling issues with proper container layout and scroll behavior
+    - ✅ Fixed: "Cannot read properties of undefined (reading 'map')" errors by adding null checks
+    - ✅ Fixed: Added defensive coding to handle undefined values throughout the chat page
+    - ✅ Fixed: Updated the chat loading logic to properly initialize empty arrays
+    - ✅ Fixed: Chat creation process to handle undefined state
+    - ✅ Fixed: Proper error handling for streaming responses
+    - ✅ Fixed: SQLite IntegrityError with updated_at field by explicitly setting the timestamp
+    - ✅ Fixed: API routing by setting the correct baseURL in the API service to '/api/v1'
+    - ✅ Fixed: EventSource URL to use the correct path without the '/api/v1' prefix
+    - ✅ Fixed: Next.js proxy configuration to correctly route API requests to the backend
+    - ✅ Added: Rule in .clinerules about not modifying the Next.js proxy configuration and using '/api/v1' as the baseURL
+    - ✅ Fixed: Implemented unified approach for API URL handling with utility functions
+    - ✅ Fixed: Chat interface scrolling issues with proper container layout and scroll behavior
+    - ✅ Fixed: FastAPI ResponseValidationError for datetime fields by explicitly setting created_at and updated_at in config services
+    - ✅ Fixed: Ollama configuration issue by making base_url parameter optional in the UI
+    - ✅ Fixed: Database handling for empty settings by adding null checks for datetime fields and fixing duplicate return statements
+    - ✅ Fixed: Indentation issues in LLM routes file while maintaining compatibility with frontend URL paths
+    - ✅ Fixed: Missing database tables by creating migration for embedding_config and reranking_config tables
+    - ✅ Fixed: Route conflicts in reranking router by reordering routes to prioritize specific paths
+    - ✅ Fixed: API consistency by adding reranking endpoints to LLM router with the same pattern as embedding endpoints
+    - ✅ Fixed: Frontend resilience by implementing fallback mechanism for API endpoints
 
 ## Milestones
 
