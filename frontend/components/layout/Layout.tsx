@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { ariaLandmarks, srOnly, srOnlyFocusable, announce } from '@/utils/accessibilityUtils';
 import SkipLink from '@/components/ui/SkipLink';
 import ProfileDropdown from '@/components/ui/ProfileDropdown';
+import ExportDropdown from '@/components/ui/ExportDropdown';
 import { Input } from '@/components/ui/Input';
 
 interface LayoutProps {
@@ -365,7 +366,7 @@ const Layout: React.FC<LayoutProps> = ({
         </button>
         
         {/* Combined Navigation and Chat History Sidebar */}
-        <div 
+          <div 
           ref={sidebarRef}
           id="nav-sidebar"
           className={`fixed left-0 top-0 bottom-0 z-30 w-64 md:w-72 lg:w-80 bg-gray-800 dark:bg-gray-900 shadow-lg transition-transform duration-300 transform ${
@@ -392,34 +393,21 @@ const Layout: React.FC<LayoutProps> = ({
                 </svg>
               )}
             </button>
-            <Link href="/" className="flex items-center mx-auto py-2">
-              <img 
-                src="/images/logo.png" 
-                alt="Doogie Chat Bot Logo" 
-                className="h-12 w-auto" 
-                aria-hidden="false"
-              />
-              <span className="sr-only">Doogie Chat Bot</span>
+            <Link href="/" className="flex items-center py-2 w-full">
+              <span className="text-white text-lg w-full text-center">Doogie Bot Chat</span>
             </Link>
           </div>
           
           <div className="h-full overflow-hidden flex flex-col">
             {/* Integrated Chat History and Navigation */}
-            <nav className="flex-grow overflow-y-auto p-4" aria-label="Main Menu">
-              {/* Always display sidebar content (chat history) first if available */}
-              {sidebarContentToShow && (
-                <div className="sidebar-chat-history mb-4">
-                  {sidebarContentToShow}
-                </div>
-              )}
-              
-              {/* Navigation Section */}
-              <ul className="space-y-2">
+              {/* Navigation Section - Display first above chat history */}
+              <ul className="space-y-2 mb-6 w-full no-divider">
+              <nav className="flex-grow overflow-y-auto p-4 w-full" aria-label="Main Menu">
                 {navItems.map((item) => (
-                  <li key={item.path}>
+                  <li key={item.path} className="w-full">
                     <Link
                       href={item.path}
-                      className={`flex items-center px-3 py-2 rounded-md ${
+                      className={`flex items-center px-3 py-2 rounded-md w-full ${
                         isActive(item.path)
                           ? 'bg-primary-700 text-white'
                           : 'text-gray-300 hover:bg-gray-700'
@@ -431,53 +419,15 @@ const Layout: React.FC<LayoutProps> = ({
                     </Link>
                   </li>
                 ))}
+              </nav>
               </ul>
-            </nav>
-            
-            {/* Bottom section with theme toggle and shortcuts */}
-            <div className="p-4 border-t border-gray-700 mt-auto">
-              <div className="flex flex-col space-y-4">
-                {/* Theme toggle */}
-                <button
-                  onClick={() => {
-                    toggleTheme();
-                    announce({ 
-                      message: `Switched to ${theme === 'dark' ? 'light' : 'dark'} mode`, 
-                      politeness: 'polite' 
-                    });
-                  }}
-                  className="flex items-center text-gray-300 hover:text-white"
-                  aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode, current mode is ${theme === 'dark' ? 'dark' : 'light'}`}
-                  aria-pressed={theme === 'dark'}
-                  data-testid="theme-toggle"
-                >
-                  {theme === 'dark' ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
-                    </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
-                    </svg>
-                  )}
-                  <span className="ml-3">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-                </button>
-                
-                {/* Keyboard shortcuts button - if using ShortcutContext */}
-                {shortcuts && (
-                  <button
-                    onClick={shortcuts.toggleShortcutDialog}
-                    className="flex items-center text-gray-300 hover:text-white"
-                    aria-label="Show keyboard shortcuts"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                    <span className="ml-3">Shortcuts</span>
-                  </button>
-                )}
-              </div>
-            </div>
+
+              {/* Always display sidebar content (chat history) below navigation */}
+              {sidebarContentToShow && (
+                <div className="sidebar-chat-history w-full no-divider">
+                  {sidebarContentToShow}
+                </div>
+              )}
           </div>
         </div>
         
@@ -541,7 +491,7 @@ const Layout: React.FC<LayoutProps> = ({
                     <img 
                       src="/images/logo.png" 
                       alt="Doogie Chat Bot Logo" 
-                      className="h-8 w-auto mr-2" 
+                      className="h-14 w-auto mr-2" 
                       aria-hidden="true"
                     />
                     <span className="cursor-pointer group-hover:text-primary-600 dark:group-hover:text-primary-400">
@@ -568,9 +518,14 @@ const Layout: React.FC<LayoutProps> = ({
               
               {/* Right section - profile dropdown */}
               <div className="flex justify-end">
-                <div className={`${hideDefaultSidebar || !isSidebarVisible ? 'block' : 'hidden md:block'} relative`}>
+                <div className={`${hideDefaultSidebar || !isSidebarVisible ? 'block' : 'hidden md:block'} flex items-center`}>
                   {isAuthenticated ? (
-                    <ProfileDropdown user={user} logout={logout} isAdmin={isAdmin} />
+                    <div className="flex items-center space-x-1">
+                      {router.pathname.startsWith('/chat') && router.query.id && (
+                        <ExportDropdown chat={{ id: String(router.query.id) }} />
+                      )}
+                      <ProfileDropdown user={user} logout={logout} isAdmin={isAdmin} />
+                    </div>
                   ) : (
                     <Link 
                       href="/login" 
@@ -592,7 +547,7 @@ const Layout: React.FC<LayoutProps> = ({
           
           {/* Footer */}
           <footer 
-            className="p-2 text-center text-xs text-gray-500 dark:text-gray-400"
+            className="fixed bottom-0 left-0 right-0 p-2 text-center text-xs text-gray-500 dark:text-gray-400 z-10 pointer-events-none"
             role={ariaLandmarks.contentinfo}
           >
             <p>

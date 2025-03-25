@@ -225,35 +225,74 @@ export const CleanChatPage = () => {
 
   // Handle updating chat tags
   const handleUpdateTags = async (chatId: string, tags: string[]) => {
-    setIsLoading(true);
+    console.log('Updating tags for chat:', chatId, 'New tags:', tags);
     setError(null);
     
+    // Optimistically update the UI immediately for a responsive feel
+    setChats(prevChats => 
+      prevChats.map(chat => 
+        chat.id === chatId ? { ...chat, tags } : chat
+      )
+    );
+    
+    // Also update current chat if it's the one being tagged
+    if (currentChat?.id === chatId) {
+      setCurrentChat(prev => prev ? { ...prev, tags } : null);
+    }
+    
     try {
+      // Use the service function to update tags
       const { success, error } = await updateChatTags(chatId, tags);
       
       if (success) {
-        // Update the chat in local state
-        setChats(prevChats => 
-          prevChats.map(chat => 
-            chat.id === chatId ? { ...chat, tags } : chat
-          )
-        );
+        console.log('Tags updated successfully in the backend');
         
-        // If it's the current chat, update that too
+        // Get latest chat data from the backend after successful update
+        await loadChats();
+        
+        // For the current chat, make sure we have the latest data with updated tags
         if (currentChat?.id === chatId) {
-          setCurrentChat(prev => prev ? { ...prev, tags } : null);
+          console.log('Refreshing current chat to get updated tags');
+          try {
+            const { chat: refreshedChat } = await getChat(chatId);
+            if (refreshedChat) {
+              console.log('Successfully refreshed chat with updated tags:', refreshedChat.tags);
+              // Preserve any data not returned from getChat
+              setCurrentChat((prev) => {
+                if (!prev) return refreshedChat;
+                return { ...prev, ...refreshedChat };
+              });
+            }
+          } catch (refreshError) {
+            console.error('Error refreshing chat after tag update:', refreshError);
+          }
         }
         
         showNotification('Tags updated successfully', 'success');
+        
+        // Remove updating-tags class from the chat element
+        setTimeout(() => {
+          const chatItem = document.querySelector(`[data-chat-id="${chatId}"]`);
+          if (chatItem) {
+            chatItem.classList.remove('updating-tags');
+          }
+        }, 300);
       } else {
+        console.error('Failed to update tags:', error);
         setError(`Failed to update tags: ${error}`);
         showNotification(`Failed to update tags: ${error}`, 'error');
+        
+        // If the API call failed, rollback the optimistic update
+        loadChats(); // Reload chats from the server to get the correct state
       }
     } catch (err) {
       console.error('Error updating tags:', err);
-      setError('An unexpected error occurred while updating tags.');
-    } finally {
-      setIsLoading(false);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to update tags: ${errorMessage}`);
+      showNotification(`Failed to update tags: ${errorMessage}`, 'error');
+      
+      // If an exception occurred, rollback the optimistic update
+      loadChats(); // Reload chats from the server to get the correct state
     }
   };
 

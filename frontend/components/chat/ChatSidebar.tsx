@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -59,6 +59,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
   // Tag search state
   const [tagSearchTerm, setTagSearchTerm] = useState('');
+  const [showTagFilters, setShowTagFilters] = useState(false);
+  const [showTagManagement, setShowTagManagement] = useState(false);
   const [tagPage, setTagPage] = useState(1);
   const [totalTagPages, setTotalTagPages] = useState(1);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -293,112 +295,138 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
     : '';
     
   return (
-    <div className="p-2 sm:p-3 md:p-4">
+    <div className="p-1.5 w-full flex flex-col h-full overflow-hidden">
       <Button
         onClick={(e) => {
           e.preventDefault();
           onNewChat();
         }}
-        className="w-full mb-2 sm:mb-4 flex items-center justify-center text-sm sm:text-base"
+        className="w-full mb-2 flex items-center justify-center text-xs py-1.5 sidebar-button"
         aria-label="Create new chat"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
         </svg>
         New Chat
       </Button>
 
-      <div className="mb-4">
+      <div className="mb-2 w-full flex-shrink-0">
         <SearchBar
           onSearch={onSearchChange}
           initialValue={searchTerm}
           placeholder="Search conversations..."
-          className="mb-2"
+          className="mb-1 w-full text-xs"
         />
 
-        {/* Tag filtering */}
-        <div className="mb-4">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-sm font-medium">Filter by tags:</span>
+        {/* Tag filtering - Collapsible */}
+        <div className="mb-1">
+          <div className="flex justify-between items-center mb-0.5">
             <button
               type="button"
-              onClick={() => setShowNewTagForm(!showNewTagForm)}
-              className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              onClick={() => setShowTagFilters(!showTagFilters)}
+              className="text-xs font-medium flex items-center w-full justify-between"
             >
-              {showNewTagForm ? 'Cancel' : '+ New Tag'}
+              <span>Filter by tags</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showTagFilters ? 'transform rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
             </button>
           </div>
 
-          {showNewTagForm && (
-              <form onSubmit={handleCreateTag} className="mb-2 sm:mb-3 p-2 bg-gray-50 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
-              <div className="mb-2">
-                <Input
-                  type="text"
-                  placeholder="Tag name"
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
-                  className="text-sm mb-2"
-                />
-                <div className="flex space-x-2 items-center">
-                  <label className="text-xs text-gray-600 dark:text-gray-400">Color:</label>
-                  <input
-                    type="color"
-                    value={newTagColor}
-                    onChange={(e) => setNewTagColor(e.target.value)}
-                    className="p-0 h-6 w-6 border-0"
-                  />
-                </div>
-              </div>
-              <Button
-                type="submit"
-                className="w-full py-1 text-sm"
-                isLoading={isCreatingTag}
-                disabled={!newTagName.trim() || isCreatingTag}
-              >
-                Create Tag
-              </Button>
-            </form>
-          )}
-
-          {error && (
-            <div className="text-sm text-red-500 dark:text-red-400 mb-2">
-              {error}
-            </div>
-          )}
-
-          {/* Use our enhanced tag selector with proper handlers */}
-          <TagSelector
-            availableTags={tags}
-            selectedTags={selectedFilterTags}
-            onChange={onSelectedTagsChange}
-            label=""
-            showSearch={true}
-            maxHeight={200}
-          />
-          
-          {/* Load more button for pagination */}
-          {totalTagPages > 1 && tagPage < totalTagPages && (
-            <button
-              onClick={handleLoadMoreTags}
-              className="w-full text-xs text-center py-1 mt-1 text-primary-600 dark:text-primary-400 hover:underline"
-              disabled={isLoadingMore}
-            >
-              {isLoadingMore ? 'Loading more tags...' : 'Load more tags'}
-            </button>
-          )}
-          
-          {/* Tag Management */}
-          {tags.length > 0 && (
-            <div className="mt-4">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Manage Tags</h3>
+          {showTagFilters && (
+            <>
+              <div className="flex justify-end mb-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowNewTagForm(!showNewTagForm)}
+                  className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                >
+                  {showNewTagForm ? 'Cancel' : '+ New Tag'}
+                </button>
               </div>
               
-              <div className="space-y-1 sm:space-y-2 max-h-36 sm:max-h-48 overflow-y-auto pr-1">
-                {tags.map(tag => (
+              {showNewTagForm && (
+                <form onSubmit={handleCreateTag} className="mb-1 p-1.5 bg-gray-50 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
+                  <div className="mb-1">
+                    <Input
+                      type="text"
+                      placeholder="Tag name"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      className="text-xs mb-1"
+                    />
+                    <div className="flex space-x-2 items-center">
+                      <label className="text-xs text-gray-600 dark:text-gray-400">Color:</label>
+                      <input
+                        type="color"
+                        value={newTagColor}
+                        onChange={(e) => setNewTagColor(e.target.value)}
+                        className="p-0 h-6 w-6 border-0"
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full py-0.5 text-xs"
+                    isLoading={isCreatingTag}
+                    disabled={!newTagName.trim() || isCreatingTag}
+                  >
+                    Create Tag
+                  </Button>
+                </form>
+              )}
+              
+              {error && (
+                <div className="text-xs text-red-500 dark:text-red-400 mb-1">
+                  {error}
+                </div>
+              )}
+
+              <TagSelector
+                availableTags={tags}
+                selectedTags={selectedFilterTags}
+                onChange={onSelectedTagsChange}
+                label=""
+                showSearch={false}
+                maxHeight={120}
+                size="small"
+                compact={true}
+              />
+              
+              {totalTagPages > 1 && tagPage < totalTagPages && (
+                <button
+                  onClick={handleLoadMoreTags}
+                  className="w-full text-xs text-center py-0.5 mt-0.5 text-primary-600 dark:text-primary-400 hover:underline"
+                  disabled={isLoadingMore}
+                >
+                  {isLoadingMore ? 'Loading more tags...' : 'Load more tags'}
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Tag Management - Collapsible */}
+          {tags.length > 0 && (
+            <div className="mt-1">
+              <div className="flex justify-between items-center mb-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowTagManagement(!showTagManagement)}
+                  className="text-xs font-medium flex items-center w-full justify-between text-gray-700 dark:text-gray-300"
+                >
+                  <span>Manage Tags</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showTagManagement ? 'transform rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+              
+              {showTagManagement && (
+                <div className="space-y-0.5 max-h-24 overflow-y-auto pr-1">
+                  {tags.map(tag => (
                   <div 
                     key={tag.id} 
-                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600"
+                    className="flex items-center justify-between p-1 bg-gray-50 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600"
                   >
                     {editingTagId === tag.id ? (
                       <form 
@@ -474,13 +502,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     )}
                   </div>
                 ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      <div className="chat-list space-y-2">
+      <div className="chat-list space-y-1 flex-grow overflow-y-auto w-full pr-1 pb-2 mt-1">
         {filteredChats.length === 0 ? (
           <div className="text-center text-gray-500 dark:text-gray-400 p-4">
             {chats.length > 0 ? (
@@ -493,36 +522,38 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
           filteredChats.map((chat) => (
             <div
               key={chat.id}
-              className="chat-item p-2 sm:p-3 rounded-lg bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-200 dark:border-gray-700"
+              data-chat-id={chat.id}
+              className="chat-item p-1.5 rounded-lg bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-200 dark:border-gray-700 w-full"
               onClick={() => onSelectChat(chat)}
             >
               <div className="flex justify-between items-start">
-                <h3 className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                <h3 className="font-medium text-xs text-gray-900 dark:text-gray-100 truncate">
                   {chat.title || 'Untitled Chat'}
                 </h3>
                 <button
-                  className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 ml-2"
+                  className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 ml-1"
                   onClick={(e) => onDeleteChat(chat.id, e)}
                   title="Delete chat"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
                 </button>
               </div>
 
               {chat.tags && chat.tags.length > 0 && (
-                <div className="flex flex-wrap mt-2 gap-1">
+                <div className="flex flex-wrap mt-1 gap-0.5">
                   {chat.tags.map(tagId => {
                     const tag = tags.find((t: Tag) => t.id === tagId);
                     return tag ? (
                       <span
                         key={tag.id}
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                        className="inline-flex items-center px-1 py-0 rounded text-xs font-medium"
                         style={{
-                          backgroundColor: `${tag.color}20`,
+                          backgroundColor: `${tag.color}30`,
                           color: tag.color,
-                          borderColor: `${tag.color}40`,
+                          borderColor: `${tag.color}60`,
+                          boxShadow: `0 0 0 1px ${tag.color}20`,
                         }}
                       >
                         {tag.name}
@@ -532,18 +563,41 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 </div>
               )}
 
-              <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                 {chat.messages?.length || 0} message{chat.messages?.length !== 1 ? 's' : ''}
               </div>
 
-              <div className="mt-2">
+              <div className="mt-1">
                 <TagSelector
-                  availableTags={tags}
-                  selectedTags={chat.tags || []}
-                  onChange={(tags) => onUpdateTags(chat.id, tags)}
-                  label=""
-                  size="small"
-                />
+                availableTags={tags}
+                selectedTags={chat.tags || []}
+                onChange={(tags) => {
+                console.log('Tag selector onChange called with tags:', tags, 'for chat ID:', chat.id);
+                // Optimistically update the UI first for a responsive feel
+                  const updatedTags = [...tags];
+                  const chatItem = document.querySelector(`[data-chat-id="${chat.id}"]`);
+                  if (chatItem) {
+                      // Mark this chat as being updated
+                    chatItem.classList.add('updating-tags');
+                  }
+                  
+                  // Call the parent component's update function
+                  onUpdateTags(chat.id, updatedTags);
+                  
+                  // Show a success notification
+                  showSuccess(showNotification, 'Chat tags updated');
+                  
+                  // Remove the updating class after a delay
+                  setTimeout(() => {
+                    if (chatItem) {
+                      chatItem.classList.remove('updating-tags');
+                    }
+                  }, 1500);
+                }}
+                label=""
+                size="small"
+                compact={true}
+              />
               </div>
             </div>
           ))

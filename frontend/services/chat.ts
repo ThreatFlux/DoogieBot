@@ -207,11 +207,17 @@ export const getChats = async (): Promise<{
 // Get a single chat by ID
 export const getChat = async (chatId: string): Promise<{ chat?: Chat; error?: string }> => {
   try {
+    console.log('Getting chat with ID:', chatId);
     const response = await get<Chat>(`/chats/${chatId}`);
     console.log('getChat response:', response);
 
     if (response.error) {
       return { error: response.error };
+    }
+
+    // Ensure chat has a tags property
+    if (response.data && !response.data.tags) {
+      response.data.tags = [];
     }
 
     return { chat: response.data };
@@ -264,7 +270,44 @@ export const updateChatTags = async (
   chatId: string,
   tags: string[]
 ): Promise<{ success?: boolean; error?: string }> => {
-  return updateChat(chatId, { tags });
+  console.log('Using service updateChatTags to update tags for chat:', chatId, 'tags:', tags);
+  try {
+    // Validation
+    if (!chatId) return { error: 'Missing chat ID' };
+    if (!Array.isArray(tags)) {
+      console.error('Tags is not an array:', tags);
+      return { error: 'Invalid tags format' };
+    }
+    
+    // Makes sure we have a clean array of strings
+    const validTags = tags.filter(tag => typeof tag === 'string' && tag.trim().length > 0);
+    
+    // First try to use the dedicated tags endpoint (preferred method)
+    const response = await put(`/tags/chats/${chatId}/tags`, { tags: validTags });
+    console.log('updateChatTags response from tags endpoint:', response);
+    
+    if (!response.error) {
+      console.log('Tags updated successfully using dedicated endpoint');
+      return { success: true };
+    }
+    
+    // If the dedicated endpoint fails, fall back to the chat update endpoint
+    console.log('Dedicated endpoint failed. Trying fallback to /chats endpoint');
+    const fallbackResponse = await put(`/chats/${chatId}`, { tags: validTags });
+    console.log('updateChatTags fallback response:', fallbackResponse);
+    
+    if (fallbackResponse.error) {
+      console.error('Error updating chat tags:', fallbackResponse.error);
+      return { error: fallbackResponse.error };
+    }
+    
+    console.log('Tags updated successfully using fallback endpoint');
+    return { success: true };
+  } catch (error) {
+    console.error('Exception in updateChatTags:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { error: `Failed to update chat tags: ${errorMessage}` };
+  }
 };
 
 // Delete a chat

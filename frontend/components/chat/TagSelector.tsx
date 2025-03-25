@@ -12,6 +12,7 @@ export interface TagSelectorProps {
   maxHeight?: number;
   isLoading?: boolean;
   errorMessage?: string;
+  compact?: boolean;
 }
 
 const TagSelector: React.FC<TagSelectorProps> = ({
@@ -23,7 +24,8 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   showSearch = true,
   maxHeight = 200,
   isLoading = false,
-  errorMessage
+  errorMessage,
+  compact = false
 }) => {
   const [filteredTags, setFilteredTags] = useState<Tag[]>(availableTags);
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,12 +38,42 @@ const TagSelector: React.FC<TagSelectorProps> = ({
     }
   }, [availableTags, searchTerm]);
 
-  const toggleTag = (tagId: string) => {
+  const tagClickHandler = (tagId: string) => (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent event bubbling to parent elements
+    e.preventDefault(); // Prevent default behavior
+    
+    // Create a new array to avoid reference issues
+    let newTags: string[];
+    
     if (selectedTags.includes(tagId)) {
-      onChange(selectedTags.filter(id => id !== tagId));
+      // Remove tag
+      newTags = selectedTags.filter(id => id !== tagId);
     } else {
-      onChange([...selectedTags, tagId]);
+      // Add tag
+      newTags = [...selectedTags, tagId];
     }
+    
+    console.log('Toggle tag', tagId, 'New selected tags:', newTags);
+    
+    // Add active class to the button for visual feedback
+    const button = e.currentTarget as HTMLButtonElement;
+    button.classList.add('tag-active-feedback');
+    
+    // Remove the class after animation
+    setTimeout(() => {
+      if (button) button.classList.remove('tag-active-feedback');
+    }, 300);
+    
+    // Force immediate UI update to reflect change
+    const chatItem = button.closest('[data-chat-id]');
+    if (chatItem) {
+      chatItem.classList.add('tag-updated');
+      setTimeout(() => {
+        if (chatItem) chatItem.classList.remove('tag-updated');
+      }, 1000);
+    }
+    
+    onChange(newTags);
   };
 
   const handleTagsLoaded = (tags: Tag[], pages: number) => {
@@ -113,7 +145,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
 
       {/* Simple list view without virtualization */}
       <div 
-        className="flex flex-wrap gap-1"
+        className={`flex flex-wrap ${compact ? 'gap-0.5' : 'gap-1'}`}
         style={{ 
           maxHeight: `${maxHeight}px`,
           overflowY: 'auto'
@@ -122,11 +154,12 @@ const TagSelector: React.FC<TagSelectorProps> = ({
         {filteredTags.map(tag => (
           <button
             key={tag.id}
-            onClick={() => toggleTag(tag.id)}
+            onClick={tagClickHandler(tag.id)}
             className={`
               tag-item inline-flex items-center rounded transition-colors
-              ${selectedTags.includes(tag.id) ? 'ring-1' : 'opacity-70 hover:opacity-100'}
+              ${selectedTags.includes(tag.id) ? 'ring-2 ring-offset-1 dark:ring-offset-0' : 'opacity-70 hover:opacity-100'}
               ${size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-sm'}
+              ${compact ? 'py-0' : ''}
             `}
             style={{
               backgroundColor: `${tag.color}10`,
