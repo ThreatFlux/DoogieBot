@@ -207,7 +207,23 @@ def update_chat(
             detail="Not enough permissions",
         )
     
-    chat = ChatService.update_chat(db, chat_id, chat_in.title)
+    # If tags are provided, update them separately
+    # This is done first to ensure both the title and tags get updated
+    if chat_in.tags is not None:
+        from app.services.tag import update_chat_tags
+        success = update_chat_tags(db, chat_id, chat_in.tags)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update chat tags",
+            )
+    
+    # Update chat title
+    if chat_in.title is not None:
+        chat = ChatService.update_chat(db, chat_id, chat_in.title)
+    
+    # Get the updated chat with associated messages
+    chat.messages = ChatService.get_messages(db, chat_id)
     return chat
 
 @router.delete("/{chat_id}", response_model=bool)

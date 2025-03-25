@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { dracula } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { Message } from '@/types';
 import { parseThinkTags } from '@/utils/thinkTagParser';
 import Tooltip from '@/components/ui/Tooltip';
@@ -163,19 +165,22 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
   // Custom components for ReactMarkdown
   const MarkdownComponents: Components = {
     code(props) {
-      const codeContent = String(props.children).replace(/\n$/, '');
-      // Get the language from className which is in format "language-xxx"
-      const match = /language-(\w+)/.exec(props.className || '');
+      const { className, children, inline, ...rest } = props;
+      const match = /language-(\w+)/.exec(className || '');
+      const codeContent = String(children).replace(/\n$/, '');
       
       // Check if it's a code block with language
-      if (match) {
+      if (!inline && match) {
         return (
           <div className="relative group">
-            <pre className={`language-${match[1]}`}>
-              <code className={props.className} {...props}>
-                {codeContent}
-              </code>
-            </pre>
+            <SyntaxHighlighter
+              style={dracula}
+              language={match[1]}
+              PreTag="pre"
+              {...rest}
+            >
+              {codeContent}
+            </SyntaxHighlighter>
             <button
               onClick={(e) => {
                 e.stopPropagation(); // Prevent triggering the message click
@@ -194,8 +199,8 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
         );
       } else {
         return (
-          <code className={props.className} {...props}>
-            {props.children}
+          <code className={className} {...rest}>
+            {children}
           </code>
         );
       }

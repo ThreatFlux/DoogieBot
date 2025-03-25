@@ -56,6 +56,7 @@ const Layout: React.FC<LayoutProps> = ({
     
     // Dispatch event to notify the ChatPage component
     if (router.pathname.startsWith('/chat') && router.query.id) {
+      console.log('Dispatching edit-chat-title-completed event with chatId:', router.query.id, 'and newTitle:', editedTitle);
       const event = new CustomEvent('edit-chat-title-completed', { 
         detail: { 
           chatId: router.query.id,

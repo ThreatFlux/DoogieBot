@@ -571,10 +571,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 <TagSelector
                 availableTags={tags}
                 selectedTags={chat.tags || []}
-                onChange={(tags) => {
-                console.log('Tag selector onChange called with tags:', tags, 'for chat ID:', chat.id);
+                onChange={(updatedTags) => {
+                console.log('Tag selector onChange called with tags:', updatedTags, 'for chat ID:', chat.id);
                 // Optimistically update the UI first for a responsive feel
-                  const updatedTags = [...tags];
                   const chatItem = document.querySelector(`[data-chat-id="${chat.id}"]`);
                   if (chatItem) {
                       // Mark this chat as being updated

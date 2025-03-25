@@ -153,23 +153,25 @@ export const CleanChatPage = () => {
   useEffect(() => {
     const handleEditTitleEvent = (event: CustomEvent<{chatId: string}>) => {
       if (currentChat && currentChat.id === event.detail.chatId) {
+        console.log('Received edit-chat-title event for chat ID:', event.detail.chatId);
         handleStartEditTitle();
       }
     };
     
-    const handleEditCompletedEvent = (event: CustomEvent<{chatId: string, newTitle: string}>) => {
+    const handleEditCompletedEvent = async (event: CustomEvent<{chatId: string, newTitle: string}>) => {
       if (currentChat && currentChat.id === event.detail.chatId) {
+        console.log('Received edit-chat-title-completed event for chat ID:', event.detail.chatId, 'with new title:', event.detail.newTitle);
         // Update title in backend and state
-        handleUpdateTitle(event.detail.newTitle);
+        await handleUpdateTitle(event.detail.newTitle);
       }
     };
     
-    document.addEventListener('edit-chat-title', handleEditTitleEvent as EventListener);
-    document.addEventListener('edit-chat-title-completed', handleEditCompletedEvent as EventListener);
+    document.addEventListener('edit-chat-title', handleEditTitleEvent as unknown as EventListener);
+    document.addEventListener('edit-chat-title-completed', handleEditCompletedEvent as unknown as EventListener);
     
     return () => {
-      document.removeEventListener('edit-chat-title', handleEditTitleEvent as EventListener);
-      document.removeEventListener('edit-chat-title-completed', handleEditCompletedEvent as EventListener);
+      document.removeEventListener('edit-chat-title', handleEditTitleEvent as unknown as EventListener);
+      document.removeEventListener('edit-chat-title-completed', handleEditCompletedEvent as unknown as EventListener);
     };
   }, [currentChat]);
 
@@ -432,11 +434,15 @@ export const CleanChatPage = () => {
     setError(null);
     
     try {
+      console.log('Updating chat title for chat ID:', currentChat.id, 'with new title:', newTitle);
       const { success, error } = await updateChat(currentChat.id, { title: newTitle });
       
       if (success) {
-        // Update chat in state
+        console.log('Chat title updated successfully in backend');
+        // Update chat in local state
         setCurrentChat(prev => prev ? { ...prev, title: newTitle } : null);
+        
+        // Update chat in chats list
         setChats(prevChats => 
           prevChats.map(chat => 
             chat.id === currentChat.id ? { ...chat, title: newTitle } : chat
@@ -451,6 +457,7 @@ export const CleanChatPage = () => {
           politeness: 'polite' 
         });
       } else {
+        console.error('Failed to update chat title in backend:', error);
         setError(`Failed to update title: ${error}`);
         showNotification(`Failed to update title: ${error}`, 'error');
       }
@@ -807,6 +814,9 @@ export const CleanChatPage = () => {
         if (updateResult.success) {
           // Update the title in the current state
           setCurrentChat(prev => prev ? { ...prev, title: newTitle } : null);
+          console.log('Successfully updated chat title in backend');
+        } else {
+          console.error('Failed to update chat title in backend:', updateResult.error);
         }
       }
       
