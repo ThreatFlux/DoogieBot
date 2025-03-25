@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
-import type { Components } from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -18,8 +17,9 @@ interface MessageContentProps {
 
 // Define the expected structure for code blocks to help with TypeScript typing
 interface CodeProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
+  inline?: boolean;
   [key: string]: any;
 }
 
@@ -129,17 +129,17 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
 
   // Custom components for ReactMarkdown
   const MarkdownComponents: Components = {
-    code(props) {
+    code: (props: CodeProps) => {
       const { className, children, inline, ...rest } = props;
       const match = /language-(\w+)/.exec(className || '');
-      const codeContent = String(children).replace(/\n$/, '');
+      const codeContent = children ? String(children).replace(/\n$/, '') : '';
       
       // Check if it's a code block with language
       if (!inline && match) {
         return (
           <div className="relative group">
             <SyntaxHighlighter
-              style={dracula}
+              style={dracula as any}
               language={match[1]}
               PreTag="pre"
               {...rest}

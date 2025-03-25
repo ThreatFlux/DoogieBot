@@ -1,19 +1,20 @@
-.PHONY: all clean install dev lint docker-lint format docker-format test docker-test security-check docker-security-check docker-build docker-up docker-down docker-up-prod help migrate frontend-build frontend-dev backend-dev generate-docs sync fix-permissions fix-docker fix-all
+.PHONY: all clean install dev lint docker-lint format docker-format test docker-test security-check docker-security-check docker-build docker-up docker-down docker-up-prod help migrate frontend-build frontend-dev backend-dev generate-docs sync lock fix-permissions fix-docker fix-all
 
 # Default target
 all: install lint test
 
 # Python settings
-PYTHON = python3
+UV = uv
+PYTHON_VERSION = 3.12
 VENV = .venv
-PIP = $(VENV)/bin/pip
+UV_RUN = $(UV) run
 
 # Local command settings
-BACKEND_LINT = $(VENV)/bin/pylint
-BACKEND_FORMAT = $(VENV)/bin/black
-BACKEND_ISORT = $(VENV)/bin/isort
-BACKEND_TEST = $(VENV)/bin/pytest
-BACKEND_SECURITY_CHECK = $(VENV)/bin/bandit
+BACKEND_LINT = $(UV_RUN) pylint
+BACKEND_FORMAT = $(UV_RUN) black
+BACKEND_ISORT = $(UV_RUN) isort
+BACKEND_TEST = $(UV_RUN) pytest
+BACKEND_SECURITY_CHECK = $(UV_RUN) bandit
 
 # Docker settings
 IMAGE_NAME = doogie-chat
@@ -62,6 +63,8 @@ help:
 	@echo " ${GREEN}fix-docker${NC}      : Fix Docker Compose file formatting issues"
 	@echo " ${GREEN}fix-all${NC}         : Fix all Docker environment issues"
 	@echo " ${GREEN}install${NC}         : Install backend and frontend dependencies"
+	@echo " ${GREEN}lock${NC}            : Generate lock file for reproducible builds"
+	@echo " ${GREEN}sync${NC}            : Sync dependencies from lock file"
 	@echo " ${GREEN}dev${NC}             : Start development environment with Docker"
 	@echo " ${GREEN}lint${NC}            : Run linters locally using virtual environment"
 	@echo " ${GREEN}docker-lint${NC}     : Run linters in Docker container"
@@ -92,15 +95,26 @@ clean:
 	find . -type f -name ".DS_Store" -delete
 	@echo "${GREEN}Cleanup complete.${NC}"
 
+# Generate lockfile
+lock:
+	@echo "${YELLOW}Generating lock file...${NC}"
+	cd backend && $(UV) lock
+	@echo "${GREEN}Lock file generated.${NC}"
+
+# Sync dependencies
+sync:
+	@echo "${YELLOW}Syncing dependencies from lock file...${NC}"
+	cd backend && $(UV) sync
+	@echo "${GREEN}Dependencies synced.${NC}"
+
 # Installation (used for local dev without Docker)
 install:
 	@echo "${YELLOW}Setting up virtual environment...${NC}"
-	python3 -m venv $(VENV)
-	$(PIP) install --upgrade pip
+	$(UV) venv --python $(PYTHON_VERSION)
 	
 	@echo "${YELLOW}Installing backend dependencies...${NC}"
-	$(PIP) install -r backend/requirements.txt
-	$(PIP) install pylint black isort pytest bandit
+	cd backend && $(UV) pip install -e .
+	cd backend && $(UV) pip install -e ".[dev]"
 	
 	@echo "${YELLOW}Installing frontend dependencies...${NC}"
 	cd frontend && npm install
@@ -137,7 +151,7 @@ docker-down:
 # Linting (Local as primary command)
 lint:
 	@echo "${YELLOW}Running backend linters locally...${NC}"
-	$(BACKEND_LINT) backend/app --disable=C0111
+	cd backend && $(BACKEND_LINT) app --disable=C0111
 	@echo "${YELLOW}Running frontend linters locally...${NC}"
 	cd frontend && npm run lint
 	@echo "${GREEN}Linting complete.${NC}"
@@ -145,7 +159,7 @@ lint:
 # Linting (Docker)
 docker-lint:
 	@echo "${YELLOW}Running backend linters in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && pip install pylint && pylint app --disable=C0111"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pylint app --disable=C0111"
 	@echo "${YELLOW}Running frontend linters in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm run lint"
 	@echo "${GREEN}Linting complete.${NC}"
@@ -153,11 +167,11 @@ docker-lint:
 # Formatting (Local as primary command)
 format:
 	@echo "${YELLOW}Formatting backend code locally...${NC}"
-	$(BACKEND_FORMAT) backend/app
-	$(BACKEND_ISORT) backend/app
+	cd backend && $(BACKEND_FORMAT) app
+	cd backend && $(BACKEND_ISORT) app
 	@if [ -d "backend/tests" ]; then \
-		$(BACKEND_FORMAT) backend/tests; \
-		$(BACKEND_ISORT) backend/tests; \
+		cd backend && $(BACKEND_FORMAT) tests; \
+		cd backend && $(BACKEND_ISORT) tests; \
 	fi
 	@echo "${YELLOW}Formatting frontend code locally...${NC}"
 	cd frontend && npm run format
@@ -166,7 +180,7 @@ format:
 # Formatting (Docker)
 docker-format:
 	@echo "${YELLOW}Formatting backend code in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && pip install black isort && black app && isort app && if [ -d 'tests' ]; then black tests && isort tests; fi"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run black app && uv run isort app && if [ -d 'tests' ]; then uv run black tests && uv run isort tests; fi"
 	@echo "${YELLOW}Formatting frontend code in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm run format"
 	@echo "${GREEN}Formatting complete.${NC}"
@@ -174,28 +188,28 @@ docker-format:
 # Testing (Local as primary command)
 test:
 	@echo "${YELLOW}Running tests locally...${NC}"
-	$(BACKEND_TEST) backend/tests
+	cd backend && $(BACKEND_TEST) tests
 	cd frontend && npm test
 	@echo "${GREEN}Tests complete.${NC}"
 
 # Testing (Docker)
 docker-test:
 	@echo "${YELLOW}Running tests in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && pip install pytest && pytest"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pytest"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm test"
 	@echo "${GREEN}Tests complete.${NC}"
 
 # Security checks (Local as primary command)
 security-check:
 	@echo "${YELLOW}Running security checks locally...${NC}"
-	$(BACKEND_SECURITY_CHECK) -r backend/app -c backend/bandit.yaml
+	cd backend && $(BACKEND_SECURITY_CHECK) -r app -c bandit.yaml
 	cd frontend && npm audit
 	@echo "${GREEN}Security checks complete.${NC}"
 
 # Security checks (Docker)
 docker-security:
 	@echo "${YELLOW}Running security checks in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && pip install bandit && bandit -r app -c bandit.yaml"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run bandit -r app -c bandit.yaml"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm audit"
 	@echo "${GREEN}Security checks complete.${NC}"
 

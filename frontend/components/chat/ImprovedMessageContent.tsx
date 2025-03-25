@@ -19,13 +19,6 @@ interface MessageContentProps {
   onUpdateMessage?: (messageId: string, newContent: string) => Promise<boolean>;
 }
 
-// Define the expected structure for code blocks to help with TypeScript typing
-interface CodeProps {
-  children: React.ReactNode;
-  className?: string;
-  [key: string]: any;
-}
-
 const ImprovedMessageContent: React.FC<MessageContentProps> = ({ 
   content, 
   message,
@@ -164,20 +157,19 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
 
   // Custom components for ReactMarkdown
   const MarkdownComponents: Components = {
-    code(props) {
-      const { className, children, inline, ...rest } = props;
+    code: (props: any) => {
+      const { className, children, inline } = props;
       const match = /language-(\w+)/.exec(className || '');
-      const codeContent = String(children).replace(/\n$/, '');
+      const codeContent = children ? String(children).replace(/\n$/, '') : '';
       
       // Check if it's a code block with language
       if (!inline && match) {
         return (
           <div className="relative group">
             <SyntaxHighlighter
-              style={dracula}
+              style={dracula as any}
               language={match[1]}
               PreTag="pre"
-              {...rest}
             >
               {codeContent}
             </SyntaxHighlighter>
@@ -199,7 +191,7 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
         );
       } else {
         return (
-          <code className={className} {...rest}>
+          <code className={className}>
             {children}
           </code>
         );

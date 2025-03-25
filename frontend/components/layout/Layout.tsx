@@ -251,7 +251,7 @@ const Layout: React.FC<LayoutProps> = ({
             path: '/chat',
             label: 'Chat',
             icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
               </svg>
             ),
@@ -262,7 +262,7 @@ const Layout: React.FC<LayoutProps> = ({
             path: '/login',
             label: 'Login',
             icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
               </svg>
             ),
@@ -271,7 +271,7 @@ const Layout: React.FC<LayoutProps> = ({
             path: '/register',
             label: 'Register',
             icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
               </svg>
             ),
@@ -402,21 +402,26 @@ const Layout: React.FC<LayoutProps> = ({
           <div className="h-full overflow-hidden flex flex-col">
             {/* Integrated Chat History and Navigation */}
               {/* Navigation Section - Display first above chat history */}
-              <ul className="space-y-2 mb-6 w-full no-divider">
+              <ul className="mb-6 w-full no-divider">
               <nav className="flex-grow overflow-y-auto p-4 w-full" aria-label="Main Menu">
                 {navItems.map((item) => (
-                  <li key={item.path} className="w-full">
+                  <li key={item.path} className="w-full mb-2">
                     <Link
                       href={item.path}
-                      className={`flex items-center px-3 py-2 rounded-md w-full ${
+                      className={`flex items-center justify-center text-xs py-1.5 rounded-md w-full sidebar-button ${
                         isActive(item.path)
                           ? 'bg-primary-700 text-white'
                           : 'text-gray-300 hover:bg-gray-700'
                       }`}
                       aria-current={isActive(item.path) ? 'page' : undefined}
                     >
-                      <span className="flex-shrink-0" aria-hidden="true">{item.icon}</span>
-                      <span className="ml-3">{item.label}</span>
+                      <span className="flex-shrink-0 h-4 w-4 mr-1" aria-hidden="true">
+                        {typeof item.icon === 'object' && React.isValidElement(item.icon) 
+                          ? React.cloneElement(item.icon, { className: 'h-4 w-4' } as React.HTMLAttributes<HTMLElement>)
+                          : item.icon
+                        }
+                      </span>
+                      <span>{item.label}</span>
                     </Link>
                   </li>
                 ))}
@@ -460,7 +465,7 @@ const Layout: React.FC<LayoutProps> = ({
                     className="text-gray-700 dark:text-gray-300 mr-2 md:hidden"
                     aria-label={isSidebarVisible ? "Close navigation" : "Open navigation"}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                   </button>
