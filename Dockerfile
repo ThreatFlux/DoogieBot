@@ -6,14 +6,18 @@ ARG USER_ID=1000
 ARG GROUP_ID=1000
 ARG USER_NAME=appuser
 
-# Install minimal system dependencies
+# Install minimal system dependencies and UV
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
     curl \
     git \
+    swig \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # Install UV package manager
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv
 
 # Create non-root user with configurable UID/GID
 RUN groupadd -g ${GROUP_ID} ${USER_NAME} && \
@@ -24,7 +28,8 @@ RUN groupadd -g ${GROUP_ID} ${USER_NAME} && \
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    UV_CACHE_DIR=/app/.uv-cache
 
 # Stage 1: Builder stage for backend
 FROM base AS backend-builder
@@ -33,11 +38,14 @@ FROM base AS backend-builder
 WORKDIR /app
 
 # Copy backend requirements
-COPY backend/requirements.txt /app/backend/
+COPY backend/pyproject.toml backend/requirements.txt /app/backend/
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -U pip setuptools wheel && \
-    pip install --no-cache-dir -r backend/requirements.txt
+# Install Python dependencies using UV
+RUN cd /app/backend && \
+    uv venv /app/.venv && \
+    uv pip install -e . && \
+    ln -s /app/.venv/bin/python /usr/local/bin/python && \
+    ln -s /app/.venv/bin/uvicorn /usr/local/bin/uvicorn
 
 # Stage 2: Builder stage for frontend
 FROM base AS frontend-builder
@@ -77,15 +85,17 @@ RUN NODE_ENV=production pnpm run build
 # Stage 3: Test stage
 FROM backend-builder AS test
 
-# Install test dependencies
-RUN pip install pytest pytest-cov black pylint mypy
+# Install test dependencies with UV
+RUN cd /app/backend && \
+    uv pip install -e ".[test]" && \
+    uv pip install black pylint mypy
 
 # Copy backend code and test files
 COPY backend/ /app/backend/
 COPY tests/ /app/tests/
 
 # Set test entrypoint
-ENTRYPOINT ["pytest"]
+ENTRYPOINT ["uv", "run", "pytest"]
 CMD ["backend/tests"]
 
 # Stage 4: Development stage
@@ -101,12 +111,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
 # Set working directory
 WORKDIR /app
 
-# Copy backend dependencies from builder
-COPY --from=backend-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=backend-builder /usr/local/bin /usr/local/bin
+# Create virtual environment and install development dependencies with UV
+RUN uv venv /app/.venv && \
+    mkdir -p /app/backend && \
+    chown -R ${USER_ID}:${GROUP_ID} /app/.venv
 
-# Install development tools
-RUN pip install pylint black isort pytest pytest-cov bandit
+# Copy pyproject.toml for dependency installation
+COPY backend/pyproject.toml /app/backend/
+
+# Install development tools with UV
+RUN cd /app/backend && \
+    uv pip install -e ".[dev]"
 
 # Create test directories and config files
 RUN mkdir -p /app/backend/tests && \
@@ -126,7 +141,8 @@ RUN mkdir -p /app/frontend/node_modules /app/frontend/.next && \
 # Environment variables for development
 ENV NODE_ENV=development \
     FASTAPI_ENV=development \
-    PNPM_HOME=".local/share/pnpm"
+    PNPM_HOME=".local/share/pnpm" \
+    PATH="/app/.venv/bin:${PATH}"
 
 # Add pnpm to PATH
 ENV PATH="${PNPM_HOME}:${PATH}"
@@ -164,9 +180,16 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy backend dependencies from builder
-COPY --from=backend-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=backend-builder /usr/local/bin /usr/local/bin
+# Create virtual environment and install dependencies with UV
+RUN uv venv /app/.venv && \
+    mkdir -p /app/backend
+
+# Copy pyproject.toml for dependency installation
+COPY backend/pyproject.toml /app/backend/
+
+# Install dependencies with UV
+RUN cd /app/backend && \
+    uv pip install -e .
 
 # Copy frontend build from builder
 COPY --from=frontend-builder /app/frontend/.next /app/frontend/.next
@@ -190,7 +213,8 @@ RUN chown -R ${USER_ID}:${GROUP_ID} /app/frontend/.next && \
 
 # Environment variables for production
 ENV NODE_ENV=production \
-    FASTAPI_ENV=production
+    FASTAPI_ENV=production \
+    PATH="/app/.venv/bin:${PATH}"
 
 # Health check
 HEALTHCHECK --interval=5m --timeout=3s \

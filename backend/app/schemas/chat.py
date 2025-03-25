@@ -40,6 +40,7 @@ class ChatCreate(ChatBase):
 
 class ChatUpdate(BaseModel):
     title: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 class ChatResponse(ChatBase):
     id: str

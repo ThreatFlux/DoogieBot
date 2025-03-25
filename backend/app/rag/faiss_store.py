@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional, Tuple, Union
 import numpy as np
-import faiss
+from annoy import AnnoyIndex
 import pickle
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class FAISSStore:
     """
-    FAISS vector store for similarity search.
+    Vector store using Annoy instead of FAISS, with the same interface.
     """
     
     def __init__(
@@ -22,7 +22,7 @@ class FAISSStore:
         dimension: int = 1536  # Default for OpenAI embeddings
     ):
         """
-        Initialize the FAISS vector store.
+        Initialize the vector store.
         
         Args:
             index_path: Path to save/load the index
@@ -37,11 +37,10 @@ class FAISSStore:
     
     def _create_index(self) -> None:
         """
-        Create a new FAISS index using CPU.
+        Create a new Annoy index.
         """
-        # Force CPU usage
-        faiss.get_num_gpus = lambda: 0
-        self.index = faiss.IndexFlatL2(self.dimension)
+        self.index = AnnoyIndex(self.dimension, 'angular')  # 'angular' is equivalent to cosine distance
+        self.next_index = 0  # Annoy uses integers as IDs
     
     def add_embedding(
         self, 
@@ -62,14 +61,12 @@ class FAISSStore:
         if self.index is None:
             self._create_index()
         
-        # Convert embedding to numpy array
-        embedding_np = np.array([embedding], dtype=np.float32)
-        
         # Add to index
-        self.index.add(embedding_np)
+        self.index.add_item(self.next_index, embedding)
         self.doc_ids.append(doc_id)
         self.doc_contents.append(content)
         self.doc_metadata.append(metadata or {})
+        self.next_index += 1
     
     def add_embeddings(self, documents: List[Dict[str, Any]]) -> None:
         """
@@ -85,7 +82,6 @@ class FAISSStore:
             self._create_index()
         
         # Extract embeddings
-        embeddings = []
         for doc in documents:
             doc_id = doc.get('id')
             embedding = doc.get('embedding')
@@ -93,17 +89,11 @@ class FAISSStore:
             metadata = doc.get('metadata', {})
             
             if doc_id and embedding and content:
-                embeddings.append(embedding)
+                self.index.add_item(self.next_index, embedding)
                 self.doc_ids.append(doc_id)
                 self.doc_contents.append(content)
                 self.doc_metadata.append(metadata)
-        
-        if embeddings:
-            # Convert embeddings to numpy array
-            embeddings_np = np.array(embeddings, dtype=np.float32)
-            
-            # Add to index
-            self.index.add(embeddings_np)
+                self.next_index += 1
     
     def search(
         self, 
@@ -120,26 +110,37 @@ class FAISSStore:
         Returns:
             List of dictionaries with document ID, score, content, and metadata
         """
-        if self.index is None or self.index.ntotal == 0:
+        if self.index is None or len(self.doc_ids) == 0:
             logger.warning("Index is empty. No results returned.")
             return []
         
-        # Convert query embedding to numpy array
-        query_np = np.array([query_embedding], dtype=np.float32)
+        # Ensure the index is built
+        if not getattr(self.index, '_n_items', None):
+            logger.warning("Index is not built. Building index now.")
+            self.index.build(10)  # 10 trees is a good default
         
         # Search index
-        distances, indices = self.index.search(query_np, min(top_k, self.index.ntotal))
+        indices, distances = self.index.get_nns_by_vector(
+            query_embedding, 
+            min(top_k, len(self.doc_ids)), 
+            include_distances=True
+        )
         
-        # Format results
+        # Format results - Convert Annoy's distances to similarity scores
+        # Annoy uses angular distance (cosine), so higher values are more dissimilar
         results = []
-        for i, idx in enumerate(indices[0]):
-            if idx != -1:  # -1 indicates no match
-                results.append({
-                    'id': self.doc_ids[idx],
-                    'score': float(1.0 / (1.0 + distances[0][i])),  # Convert distance to similarity score
-                    'content': self.doc_contents[idx],
-                    'metadata': self.doc_metadata[idx]
-                })
+        for i, idx in enumerate(indices):
+            # Convert distance to similarity score (1.0 is perfect match)
+            # Annoy returns angular distance which ranges from 0 (identical) to 2 (completely dissimilar)
+            # Transform to a 0-1 similarity score
+            similarity = 1.0 - (distances[i] / 2.0)
+            
+            results.append({
+                'id': self.doc_ids[idx],
+                'score': float(similarity),
+                'content': self.doc_contents[idx],
+                'metadata': self.doc_metadata[idx]
+            })
         
         return results
     
@@ -160,18 +161,23 @@ class FAISSStore:
                     'doc_ids': self.doc_ids,
                     'doc_contents': self.doc_contents,
                     'doc_metadata': self.doc_metadata,
-                    'dimension': self.dimension
+                    'dimension': self.dimension,
+                    'next_index': getattr(self, 'next_index', len(self.doc_ids))
                 }, f)
             
-            # Save FAISS index
-            index_bin_path = self.index_path + '.bin'
+            # Save Annoy index
             if self.index is not None:
-                faiss.write_index(self.index, index_bin_path)
+                # Build index if not already built
+                if not getattr(self.index, '_n_items', None):
+                    self.index.build(10)  # 10 trees is a good default
+                    
+                index_bin_path = self.index_path + '.ann'
+                self.index.save(index_bin_path)
             
-            logger.info(f"FAISS index saved to {self.index_path}")
+            logger.info(f"Vector index saved to {self.index_path}")
             return True
         except Exception as e:
-            logger.error(f"Error saving FAISS index: {str(e)}")
+            logger.error(f"Error saving vector index: {str(e)}")
             return False
     
     def load(self) -> bool:
@@ -193,18 +199,20 @@ class FAISSStore:
                 self.doc_contents = data['doc_contents']
                 self.doc_metadata = data['doc_metadata']
                 self.dimension = data['dimension']
+                self.next_index = data.get('next_index', len(self.doc_ids))
             
-            # Load FAISS index
-            index_bin_path = self.index_path + '.bin'
+            # Load Annoy index
+            index_bin_path = self.index_path + '.ann'
             if os.path.exists(index_bin_path):
-                self.index = faiss.read_index(index_bin_path)
-                logger.info(f"FAISS index loaded from {index_bin_path} with {self.index.ntotal} vectors")
+                self.index = AnnoyIndex(self.dimension, 'angular')
+                self.index.load(index_bin_path)
+                logger.info(f"Vector index loaded from {index_bin_path} with {len(self.doc_ids)} vectors")
                 return True
             else:
-                logger.warning(f"FAISS binary index file {index_bin_path} does not exist")
+                logger.warning(f"Vector index file {index_bin_path} does not exist")
                 return False
         except Exception as e:
-            logger.error(f"Error loading FAISS index: {str(e)}")
+            logger.error(f"Error loading vector index: {str(e)}")
             return False
     
     def clear(self) -> None:
@@ -215,13 +223,14 @@ class FAISSStore:
         self.doc_ids = []
         self.doc_contents = []
         self.doc_metadata = []
+        self.next_index = 0
         
         # Remove index files if they exist
         if os.path.exists(self.index_path):
             os.remove(self.index_path)
-            logger.info(f"FAISS index file {self.index_path} removed")
+            logger.info(f"Vector index file {self.index_path} removed")
         
-        index_bin_path = self.index_path + '.bin'
+        index_bin_path = self.index_path + '.ann'
         if os.path.exists(index_bin_path):
             os.remove(index_bin_path)
-            logger.info(f"FAISS binary index file {index_bin_path} removed")
+            logger.info(f"Vector index file {index_bin_path} removed")

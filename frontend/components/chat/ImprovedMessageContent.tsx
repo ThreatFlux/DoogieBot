@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -9,25 +10,26 @@ import { parseThinkTags } from '@/utils/thinkTagParser';
 import Tooltip from '@/components/ui/Tooltip';
 import { useNotification } from '@/contexts/NotificationContext';
 import DocumentReferences from '@/components/chat/DocumentReferences';
+import MarkdownEditor from '@/components/chat/MarkdownEditor';
+import { Button } from '@/components/ui/Button';
 
 interface MessageContentProps {
   content: string;
   message: Message;
+  onUpdateMessage?: (messageId: string, newContent: string) => Promise<boolean>;
 }
 
-// Define the expected structure for code blocks to help with TypeScript typing
-interface CodeProps {
-  children?: React.ReactNode;
-  className?: string;
-  inline?: boolean;
-  [key: string]: any;
-}
-
-const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => {
+const ImprovedMessageContent: React.FC<MessageContentProps> = ({ 
+  content, 
+  message,
+  onUpdateMessage 
+}) => {
   const [collapsedThinkTags, setCollapsedThinkTags] = useState<{[key: number]: boolean}>({});
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [showActionsOnMobile, setShowActionsOnMobile] = useState(false);
   const [isInfoExpanded, setIsInfoExpanded] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { showNotification } = useNotification();
   const messageRef = useRef<HTMLDivElement>(null);
   
@@ -94,6 +96,32 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
     ? new Date(message.created_at).toLocaleString()
     : 'Unknown time';
 
+  // Handle saving edited content
+  const handleSaveContent = async (newContent: string) => {
+    if (!onUpdateMessage) {
+      setIsEditing(false);
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      const success = await onUpdateMessage(String(message.id), newContent);
+      
+      if (success) {
+        showNotification('Message updated successfully', 'success');
+        setIsEditing(false);
+      } else {
+        showNotification('Failed to update message', 'error');
+      }
+    } catch (error) {
+      console.error('Error updating message:', error);
+      showNotification('An error occurred while updating the message', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Info tooltip content
   const infoTooltipContent = (
     <div className="text-xs p-2 max-w-xs">
@@ -129,8 +157,8 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
 
   // Custom components for ReactMarkdown
   const MarkdownComponents: Components = {
-    code: (props: CodeProps) => {
-      const { className, children, inline, ...rest } = props;
+    code: (props: any) => {
+      const { className, children, inline } = props;
       const match = /language-(\w+)/.exec(className || '');
       const codeContent = children ? String(children).replace(/\n$/, '') : '';
       
@@ -142,7 +170,6 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
               style={dracula as any}
               language={match[1]}
               PreTag="pre"
-              {...rest}
             >
               {codeContent}
             </SyntaxHighlighter>
@@ -164,13 +191,35 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
         );
       } else {
         return (
-          <code className={className} {...rest}>
+          <code className={className}>
             {children}
           </code>
         );
       }
     }
   };
+
+  // If in editing mode, show the Markdown Editor
+  if (isEditing) {
+    return (
+      <div className="mt-2">
+        <MarkdownEditor
+          initialValue={content}
+          onSave={handleSaveContent}
+          onCancel={() => setIsEditing(false)}
+        />
+        {isSaving && (
+          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 flex items-center">
+            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Saving changes...
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -231,8 +280,22 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
           )}
         </div>
 
-        {/* Message Action Buttons - Now at the bottom of the message */}
+        {/* Message Action Buttons */}
         <div className="flex justify-end space-x-2 mt-2">
+          {/* Edit Button - Show for both user and assistant messages if onUpdateMessage is provided */}
+          {onUpdateMessage && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
+              aria-label="Edit message"
+              title="Edit message"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+              </svg>
+            </button>
+          )}
+
           {/* Thumbs up/down buttons - Only show for assistant messages */}
           {message.role === 'assistant' && (
             <div className="flex space-x-1">
@@ -330,4 +393,4 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
   );
 };
 
-export default MessageContent;
+export default ImprovedMessageContent;
