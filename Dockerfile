@@ -176,10 +176,17 @@ COPY frontend/package.json frontend/next.config.js /app/frontend/
 
 # Copy backend code
 COPY backend/ /app/backend/
+RUN chown -R ${USER_ID}:${GROUP_ID} /app/backend
 
 # Copy entrypoint scripts
 COPY entrypoint.prod.sh /app/
-RUN chmod +x /app/entrypoint.prod.sh  
+RUN chmod +x /app/entrypoint.prod.sh && \
+    chown ${USER_ID}:${GROUP_ID} /app/entrypoint.prod.sh
+
+# Ensure frontend build files have correct ownership
+RUN chown -R ${USER_ID}:${GROUP_ID} /app/frontend/.next && \
+    chown -R ${USER_ID}:${GROUP_ID} /app/frontend/public && \
+    chown -R ${USER_ID}:${GROUP_ID} /app/frontend/node_modules
 
 # Environment variables for production
 ENV NODE_ENV=production \
