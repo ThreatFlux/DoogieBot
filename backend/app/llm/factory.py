@@ -4,6 +4,7 @@ import logging
 from app.llm.base import LLMClient
 from app.llm.openai_client import OpenAIClient
 from app.llm.ollama_client import OllamaClient
+from app.llm.openrouter_client import OpenRouterClient
 from app.core.config import settings
 
 # Set up logging
@@ -28,7 +29,7 @@ class LLMFactory:
         "ollama": OllamaClient,
         # These are placeholders - they will use OpenAIClient until proper implementations are available
         "anthropic": OpenAIClient,  # Placeholder using OpenAIClient
-        "openrouter": OpenAIClient,  # Placeholder using OpenAIClient
+        "openrouter": OpenRouterClient,
         # "deepseek": DeepseekClient,
         # "lmstudio": LMStudioClient,
     }
