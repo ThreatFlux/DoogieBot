@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doogie-chat"
+version = "1.0.0"
+description = "A chat bot application with a Hybrid RAG (BM25 + FAISS) and GraphRAG system"
+authors = [
+    {name = "Doogie Chat Team", email = "admin@example.com"}
+]
+readme = "../README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    # Web Framework
+    "fastapi>=0.108.0",
+    "uvicorn[standard]>=0.30.0",
+    "aiohttp>=3.9.3",  # Updated for Python 3.12 compatibility
+    
+    # Database
+    "sqlalchemy>=2.0.28",
+    "alembic>=1.15.1",
+    
+    # Authentication
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.1.2",
+    "python-multipart>=0.0.9",
+    
+    # Data Validation
+    "pydantic>=2.10.6",
+    "pydantic-settings>=2.2.1",
+    "email-validator>=2.1.1",
+    
+    # RAG Components
+    # Using alternative vector store as faiss-cpu is difficult to build from source for Python 3.12
+    "annoy>=1.17.3",  # Alternative to faiss-cpu for vector search
+    "rank-bm25>=0.2.2",
+    "networkx>=3.2.1",
+    "sentence-transformers>=3.4.1",
+    "scikit-learn>=1.4.1",
+    
+    # Document Processing
+    "PyPDF2>=3.0.1",
+    "python-docx>=1.1.0",
+    "markdown>=3.6",
+    "python-frontmatter>=1.1.0",
+    "PyYAML>=6.0.1",
+    
+    # Utilities
+    "python-dotenv>=1.0.1",
+    "httpx>=0.27.0",
+    "tenacity>=8.3.0",
+    "loguru>=0.7.2",
+    "requests>=2.32.0",
+    "GitPython>=3.1.43",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "black>=24.2.0",
+    "pylint>=3.1.0",
+    "isort>=5.13.2",
+    "mypy>=1.9.0",
+    "bandit>=1.7.7",
+]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pylint]
+max-line-length = 100
+disable = ["C0111", "C0103", "C0303", "W1203"]
