@@ -289,6 +289,21 @@ export const sendMessage = async (chatId: string, content: string): Promise<{ me
   return { message: response.data };
 };
 
+// Update a message
+export const updateMessage = async (
+  chatId: string,
+  messageId: string,
+  content: string
+): Promise<{ message?: Message; error?: string }> => {
+  const response = await put<Message>(`/chats/${chatId}/messages/${messageId}`, { content });
+
+  if (response.error) {
+    return { error: response.error };
+  }
+
+  return { message: response.data };
+};
+
 // Send a message to the LLM and get a response
 export const sendMessageToLLM = async (chatId: string, content: string): Promise<{ message?: Message; error?: string }> => {
   const response = await post<Message>(`/chats/${chatId}/llm`, { role: 'user', content });

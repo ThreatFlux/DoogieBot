@@ -7,16 +7,15 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { Chat, Message } from '@/types';
-import { getChats, createChat, getChat, deleteChat, submitFeedback, updateChatTags, updateChat } from '@/services/chat';
+import { getChats, createChat, getChat, deleteChat, submitFeedback, updateChatTags, updateChat, updateMessage } from '@/services/chat';
 import { exportChat, ExportFormat } from '@/utils/exportUtils';
 import { getApiUrl } from '@/services/api';
 import { announce } from '@/utils/accessibilityUtils';
-import ChatInput from "@/components/chat/ChatInput";
-
 
 // Import our components
 import ChatSidebar from '@/components/chat/ChatSidebar';
-import MessageContent from '@/components/chat/MessageContent';
+import ImprovedMessageContent from '@/components/chat/ImprovedMessageContent';
+import ImprovedChatInput from '@/components/chat/ImprovedChatInput';
 import { FeedbackType } from '@/components/chat/FeedbackButton';
 import DocumentReferences from '@/components/chat/DocumentReferences';
 
@@ -149,6 +148,30 @@ export const CleanChatPage = () => {
     
     return () => clearTimeout(scrollTimeout);
   }, [currentChat?.messages, isStreaming]);
+  
+  // Listen for custom event to edit title from the Layout component
+  useEffect(() => {
+    const handleEditTitleEvent = (event: CustomEvent<{chatId: string}>) => {
+      if (currentChat && currentChat.id === event.detail.chatId) {
+        handleStartEditTitle();
+      }
+    };
+    
+    const handleEditCompletedEvent = (event: CustomEvent<{chatId: string, newTitle: string}>) => {
+      if (currentChat && currentChat.id === event.detail.chatId) {
+        // Update title in backend and state
+        handleUpdateTitle(event.detail.newTitle);
+      }
+    };
+    
+    document.addEventListener('edit-chat-title', handleEditTitleEvent as EventListener);
+    document.addEventListener('edit-chat-title-completed', handleEditCompletedEvent as EventListener);
+    
+    return () => {
+      document.removeEventListener('edit-chat-title', handleEditTitleEvent as EventListener);
+      document.removeEventListener('edit-chat-title-completed', handleEditCompletedEvent as EventListener);
+    };
+  }, [currentChat]);
 
   const handleNewChat = async () => {
     // Clear all relevant state
@@ -359,6 +382,46 @@ export const CleanChatPage = () => {
       setIsEditingTitle(false);
     }
   };
+  
+  // Update title directly (used by the Layout component)
+  const handleUpdateTitle = async (newTitle: string) => {
+    if (!currentChat || !newTitle.trim() || newTitle === currentChat.title) {
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { success, error } = await updateChat(currentChat.id, { title: newTitle });
+      
+      if (success) {
+        // Update chat in state
+        setCurrentChat(prev => prev ? { ...prev, title: newTitle } : null);
+        setChats(prevChats => 
+          prevChats.map(chat => 
+            chat.id === currentChat.id ? { ...chat, title: newTitle } : chat
+          )
+        );
+        
+        showNotification('Chat title updated successfully', 'success');
+        
+        // Announce for screen readers
+        announce({ 
+          message: 'Chat title updated successfully', 
+          politeness: 'polite' 
+        });
+      } else {
+        setError(`Failed to update title: ${error}`);
+        showNotification(`Failed to update title: ${error}`, 'error');
+      }
+    } catch (err) {
+      console.error('Error updating chat title:', err);
+      setError('An unexpected error occurred while updating the chat title.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleFeedback = async (messageId: string, feedback: FeedbackType, feedbackText?: string) => {
     try {
@@ -396,6 +459,45 @@ export const CleanChatPage = () => {
     } catch (err) {
       console.error('Error submitting feedback:', err);
       setError('Failed to submit feedback');
+    }
+  };
+
+  // Handle updating a message
+  const handleUpdateMessage = async (messageId: string, newContent: string): Promise<boolean> => {
+    if (!currentChat) return false;
+    
+    try {
+      const { message: updatedMessage, error } = await updateMessage(
+        currentChat.id,
+        messageId,
+        newContent
+      );
+      
+      if (error) {
+        throw new Error(error);
+      }
+      
+      // Update the message in the UI
+      if (updatedMessage) {
+        setCurrentChat(prev => {
+          if (!prev) return null;
+          
+          return {
+            ...prev,
+            messages: prev.messages?.map(msg =>
+              String(msg.id) === messageId ? { ...msg, content: newContent } : msg
+            )
+          };
+        });
+        
+        return true;
+      }
+      
+      return false;
+    } catch (err) {
+      console.error('Error updating message:', err);
+      setError('Failed to update message');
+      return false;
     }
   };
 
@@ -575,7 +677,7 @@ export const CleanChatPage = () => {
     setIsStreaming(false);
   };
 
-  const handleSendMessage = async (messageContent: string) => {
+  const handleSendMessage = async (messageContent: string, contextDocuments?: string[]) => {
     if (isStreaming) return;
     setError(null); // Clear any previous errors
 
@@ -615,6 +717,7 @@ export const CleanChatPage = () => {
       role: 'user' as const,
       content: messageContent,
       created_at: new Date().toISOString(),
+      context_documents: contextDocuments // Add context documents if provided
     };
 
     setCurrentChat(prev => ({
@@ -681,8 +784,25 @@ export const CleanChatPage = () => {
         }
       }
       
+      // Prepare query params including context documents if provided
+      let streamUrl = `/chats/${chat.id}/stream?content=${encodeURIComponent(messageContent)}`;
+      
+      // Add context documents if available
+      if (contextDocuments && contextDocuments.length > 0) {
+        const contextParam = contextDocuments.join(',');
+        streamUrl += `&context_documents=${encodeURIComponent(contextParam)}`;
+      }
+      
       // Set up EventSource
-      const eventSource = setupEventSource(chat.id, messageContent);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      streamUrl += `&token=${encodeURIComponent(token)}&_=${Date.now()}`;
+      
+      const eventSource = new EventSource(getApiUrl(streamUrl, false));
+      eventSourceRef.current = eventSource;
       
       // Set up event handlers
       eventSource.onmessage = handleEventMessage;
@@ -765,107 +885,14 @@ export const CleanChatPage = () => {
     }
 
     return (
-      <div className="flex flex-col h-full">
-        {/* Chat header */}
-        <div className="flex-none p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center">
-            {isEditingTitle ? (
-              <div className="flex-grow">
-                <Input
-                  ref={titleInputRef}
-                  value={editedTitle}
-                  onChange={(e) => setEditedTitle(e.target.value)}
-                  onBlur={handleSaveTitle}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSaveTitle();
-                    } else if (e.key === 'Escape') {
-                      setIsEditingTitle(false);
-                    }
-                  }}
-                  className="font-bold text-lg"
-                />
-              </div>
-            ) : (
-              <h1 
-                className="text-lg font-bold cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 mr-2 flex-grow"
-                onClick={handleStartEditTitle}
-                title="Click to edit title"
-                role="button"
-                tabIndex={0}
-                aria-label={`Edit chat title: ${currentChat.title}`}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    handleStartEditTitle();
-                  }
-                }}
-              >
-                {currentChat.title}
-              </h1>
-            )}
+      <div className="flex flex-col h-full min-h-0">
+        {/* We're removing the extra title and divider as per requirements */}
+        {/* The title is already shown in the Layout component */}
 
-            <div className="flex space-x-2">
-              {/* Export button */}
-              <button
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                onClick={() => setShowExportMenu(!showExportMenu)}
-                aria-label="Export chat"
-                title="Export chat"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-              </button>
-              
-              {showExportMenu && (
-                <div 
-                  ref={exportMenuRef}
-                  className="absolute right-0 mt-10 w-48 bg-white dark:bg-gray-800 shadow-lg rounded-md z-10 py-1"
-                  role="menu"
-                  aria-orientation="vertical"
-                  aria-labelledby="export-menu-button"
-                >
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    onClick={() => handleExport(ExportFormat.JSON)}
-                    role="menuitem"
-                  >
-                    Export as JSON
-                  </button>
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    onClick={() => handleExport(ExportFormat.MD)}
-                    role="menuitem"
-                  >
-                    Export as Markdown
-                  </button>
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    onClick={() => handleExport(ExportFormat.TXT)}
-                    role="menuitem"
-                  >
-                    Export as Text
-                  </button>
-                </div>
-              )}
 
-              {/* Delete button */}
-              <button
-                className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                onClick={() => handleDeleteChatClick(currentChat.id)}
-                aria-label="Delete chat"
-                title="Delete chat"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
 
         {/* Chat Messages */}
-        <div className="flex-grow overflow-y-auto p-4" aria-live="polite">
+        <div className="flex-grow overflow-y-auto p-4 min-h-0" aria-live="polite">
           {error && (
             <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md flex items-start" role="alert">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -908,33 +935,10 @@ export const CleanChatPage = () => {
                       )}
                     </span>
                     
-                    {message.role === 'assistant' && (
-                      <div className="flex items-center space-x-1">
-                        <button
-                          onClick={() => handleFeedback(String(message.id), 'positive')}
-                          className="p-1 text-green-500 hover:bg-green-100 dark:hover:bg-green-900/30 rounded"
-                          aria-label="Mark as helpful"
-                          title="Helpful"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleFeedback(String(message.id), 'negative')}
-                          className="p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
-                          aria-label="Mark as not helpful"
-                          title="Not helpful"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path d="M18 9.5a1.5 1.5 0 11-3 0v-6a1.5 1.5 0 013 0v6zM14 9.667v-5.43a2 2 0 00-1.105-1.79l-.05-.025A4 4 0 0011.055 2H5.64a2 2 0 00-1.962 1.608l-1.2 6A2 2 0 004.44 12H8v4a2 2 0 002 2 1 1 0 001-1v-.667a4 4 0 01.8-2.4l1.4-1.866a4 4 0 00.8-2.4z" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
+                    {/* Removed thumbs up/down buttons from the top of messages */}
                   </div>
                   
-                  <MessageContent content={message.content} message={message} />
+                  <ImprovedMessageContent content={message.content} message={message} onUpdateMessage={handleUpdateMessage} />
                   
                   {message.role === 'assistant' && message.document_ids && message.document_ids.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
@@ -964,7 +968,7 @@ export const CleanChatPage = () => {
         </div>
 
         {/* Chat Input */}
-        <ChatInput
+        <ImprovedChatInput
           onSendMessage={handleSendMessage}
           isStreaming={isStreaming}
           disabled={!currentChat || isStreaming}
@@ -999,7 +1003,7 @@ export const CleanChatPage = () => {
         onClose={() => setEditDialogOpen(false)}
         onConfirm={confirmEditTitle}
         title="Edit Chat Title"
-        message={`Are you sure you want to edit the title of "${originalTitle}"?`}
+        message={`Are you sure you want to edit the title "${originalTitle}"?`}
         confirmLabel="Edit"
         cancelLabel="Cancel"
         variant="info"

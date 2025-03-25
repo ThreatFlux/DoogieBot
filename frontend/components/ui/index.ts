@@ -7,5 +7,6 @@ export { default as Toast } from './Toast';
 export { default as ConfirmDialog } from './ConfirmDialog';
 export { default as Tooltip } from './Tooltip';
 export { default as SkipLink } from './SkipLink';
+export { default as ProfileDropdown } from './ProfileDropdown';
 
 // Add other component exports here as they're created

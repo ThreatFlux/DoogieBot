@@ -7,6 +7,8 @@ import { useShortcuts } from '@/contexts/ShortcutContext';
 import Link from 'next/link';
 import { ariaLandmarks, srOnly, srOnlyFocusable, announce } from '@/utils/accessibilityUtils';
 import SkipLink from '@/components/ui/SkipLink';
+import ProfileDropdown from '@/components/ui/ProfileDropdown';
+import { Input } from '@/components/ui/Input';
 
 interface LayoutProps {
   children: ReactNode;
@@ -16,6 +18,7 @@ interface LayoutProps {
   activeConversationId?: string; // Kept for backward compatibility
   sidebarContent?: ReactNode;    // New prop that replaces chatHistory
   isSidebarOpen?: boolean;       // New prop to control initial sidebar visibility
+  hideDefaultSidebar?: boolean;  // New prop to hide the default sidebar completely
 }
 
 const Layout: React.FC<LayoutProps> = ({
@@ -25,16 +28,77 @@ const Layout: React.FC<LayoutProps> = ({
   chatHistory,
   activeConversationId,
   sidebarContent,
-  isSidebarOpen = false
+  isSidebarOpen = false,
+  hideDefaultSidebar = false
 }) => {
   const { isAuthenticated, isAdmin, user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const shortcuts = useShortcuts();
   const router = useRouter();
   
+  // Title editing state
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState(title);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  
+  // Update edited title when parent component title changes
+  useEffect(() => {
+    setEditedTitle(title);
+  }, [title]);
+  
+  // Handle saving the edited title
+  const handleSaveTitle = () => {
+    if (!editedTitle.trim() || editedTitle === title) {
+      setIsEditingTitle(false);
+      return;
+    }
+    
+    // Dispatch event to notify the ChatPage component
+    if (router.pathname.startsWith('/chat') && router.query.id) {
+      const event = new CustomEvent('edit-chat-title-completed', { 
+        detail: { 
+          chatId: router.query.id,
+          newTitle: editedTitle
+        } 
+      });
+      document.dispatchEvent(event);
+    }
+    
+    setIsEditingTitle(false);
+  };
+  
+  // Focus the input when entering edit mode
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+  
   // Sidebar states
-  const [isSidebarVisible, setSidebarVisible] = useState(isSidebarOpen);
-  const [isPinned, setIsPinned] = useState(false); // New state for pinning the sidebar
+  const [isPinned, setIsPinned] = useState(() => {
+    // Only run in client-side
+    if (typeof window !== 'undefined') {
+      const storedValue = localStorage.getItem('sidebarPinned');
+      // If a value exists in localStorage, use that; otherwise default to pinned (true)
+      return storedValue !== null ? storedValue === 'true' : true;
+    }
+    return true; // Default to pinned on server-side rendering
+  });
+  
+  const [isSidebarVisible, setSidebarVisible] = useState(() => {
+    // If we're on the client
+    if (typeof window !== 'undefined') {
+      // Check if there's a stored pin value
+      const storedValue = localStorage.getItem('sidebarPinned');
+      // If stored value exists, use it; if it's null, default to true (pinned)
+      const isPinnedFromStorage = storedValue !== null ? storedValue === 'true' : true;
+      // If pinned, always show sidebar; otherwise use the prop
+      return isPinnedFromStorage ? true : isSidebarOpen;
+    }
+    // On server, follow the same logic - default to visible since isPinned defaults to true
+    return true;
+  });
   const sidebarRef = useRef<HTMLDivElement>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const autoHideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -54,8 +118,18 @@ const Layout: React.FC<LayoutProps> = ({
   
   // Update sidebar visibility when isSidebarOpen prop changes
   useEffect(() => {
-    setSidebarVisible(isSidebarOpen);
-  }, [isSidebarOpen]);
+    // Only update isSidebarVisible from props if not pinned
+    if (!isPinned) {
+      setSidebarVisible(isSidebarOpen);
+    }
+  }, [isSidebarOpen, isPinned]);
+  
+  // Persist pinned state to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sidebarPinned', isPinned.toString());
+    }
+  }, [isPinned]);
   
   // Handle focus detection for sidebar
   useEffect(() => {
@@ -149,9 +223,11 @@ const Layout: React.FC<LayoutProps> = ({
   
   // Handle pinning/unpinning sidebar
   const togglePinned = () => {
-    setIsPinned(!isPinned);
+    const newPinnedState = !isPinned;
+    setIsPinned(newPinnedState);
+    
     // Ensure sidebar is visible when pinned
-    if (!isPinned) {
+    if (newPinnedState) {
       setSidebarVisible(true);
       announce({ 
         message: 'Sidebar pinned open', 
@@ -177,30 +253,7 @@ const Layout: React.FC<LayoutProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
               </svg>
             ),
-          },
-          {
-            path: '/profile',
-            label: 'Profile',
-            icon: (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            ),
-          },
-          ...(isAdmin
-            ? [
-                {
-                  path: '/admin',
-                  label: 'Admin',
-                  icon: (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  ),
-                },
-              ]
-            : []),
+          }
         ]
       : [
           {
@@ -317,14 +370,13 @@ const Layout: React.FC<LayoutProps> = ({
           id="nav-sidebar"
           className={`fixed left-0 top-0 bottom-0 z-30 w-64 md:w-72 lg:w-80 bg-gray-800 dark:bg-gray-900 shadow-lg transition-transform duration-300 transform ${
             isSidebarVisible ? 'translate-x-0' : '-translate-x-full'
-          }`}
+          } ${hideDefaultSidebar ? 'hidden' : ''}`}
           role={ariaLandmarks.navigation}
           aria-label="Main Navigation and Chat History"
           aria-expanded={isSidebarVisible}
-
         >
           {/* App Logo and Title */}
-          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <div className="p-4 flex items-center justify-between">
             <button
               onClick={togglePinned}
               className="absolute right-4 text-gray-300 hover:text-white"
@@ -354,9 +406,9 @@ const Layout: React.FC<LayoutProps> = ({
           <div className="h-full overflow-hidden flex flex-col">
             {/* Integrated Chat History and Navigation */}
             <nav className="flex-grow overflow-y-auto p-4" aria-label="Main Menu">
-              {/* If we have sidebar content to show, display it first */}
+              {/* Always display sidebar content (chat history) first if available */}
               {sidebarContentToShow && (
-                <div className="sidebar-chat-history">
+                <div className="sidebar-chat-history mb-4">
                   {sidebarContentToShow}
                 </div>
               )}
@@ -379,22 +431,6 @@ const Layout: React.FC<LayoutProps> = ({
                     </Link>
                   </li>
                 ))}
-                {isAuthenticated && (
-                  <li>
-                    <button
-                      onClick={logout}
-                      className="flex items-center w-full px-3 py-2 rounded-md text-gray-300 hover:bg-gray-700"
-                      aria-label="Logout"
-                    >
-                      <span className="flex-shrink-0" aria-hidden="true">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                      </span>
-                      <span className="ml-3">Logout</span>
-                    </button>
-                  </li>
-                )}
               </ul>
             </nav>
             
@@ -449,7 +485,7 @@ const Layout: React.FC<LayoutProps> = ({
         <div className="flex-1 flex flex-col min-h-screen">
           {/* Main content area */}
           <main 
-            className="flex-1 p-6 pt-4 overflow-auto transition-all duration-300 md:ml-72 lg:ml-80 w-auto md:w-[calc(100%-18rem)] lg:w-[calc(100%-20rem)]"
+            className={`flex-1 flex flex-col overflow-auto min-h-0 transition-all duration-300 ${hideDefaultSidebar ? '' : isSidebarVisible ? 'md:ml-72 lg:ml-80' : 'md:ml-0'} w-auto ${hideDefaultSidebar ? '' : isSidebarVisible ? 'md:w-[calc(100%-18rem)] lg:w-[calc(100%-20rem)]' : 'w-full'}`}
             role={ariaLandmarks.main}
             id="main-content"
             ref={mainContentRef}
@@ -457,31 +493,98 @@ const Layout: React.FC<LayoutProps> = ({
             aria-label="Main content"
           >
             {/* App header for mobile - only shown on smaller screens */}
-            <div className="flex items-center md:hidden mb-4 ml-0">
-              <button
-                onClick={() => {
-                  setSidebarVisible(!isSidebarVisible);
-                  announce({ 
-                    message: isSidebarVisible ? 'Sidebar closed' : 'Sidebar opened', 
-                    politeness: 'polite' 
-                  });
-                }}
-                className="text-gray-700 dark:text-gray-300 mr-2"
-                aria-label={isSidebarVisible ? "Close navigation" : "Open navigation"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <h1 className="text-lg font-bold flex items-center">
-                <img 
-                  src="/images/logo.png" 
-                  alt="Doogie Chat Bot Logo" 
-                  className="h-8 w-auto mr-2" 
-                  aria-hidden="true"
-                />
-                <span>{title}</span>
-              </h1>
+            {/* App header with three columns: menu button, centered title, and profile */}
+            <div className="grid grid-cols-3 items-center mb-4 w-full p-6 pt-4">
+              {/* Left section - mobile menu button */}
+              <div className="flex items-center justify-start">
+                {!hideDefaultSidebar && (
+                  <button
+                    onClick={() => {
+                      setSidebarVisible(!isSidebarVisible);
+                      announce({ 
+                        message: isSidebarVisible ? 'Sidebar closed' : 'Sidebar opened', 
+                        politeness: 'polite' 
+                      });
+                    }}
+                    className="text-gray-700 dark:text-gray-300 mr-2 md:hidden"
+                    aria-label={isSidebarVisible ? "Close navigation" : "Open navigation"}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              
+              {/* Center section - title */}
+              <div className="flex justify-center items-center">
+                {isEditingTitle ? (
+                  <div className="max-w-xs">
+                    <Input
+                      ref={titleInputRef}
+                      value={editedTitle}
+                      onChange={(e) => setEditedTitle(e.target.value)}
+                      onBlur={handleSaveTitle}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveTitle();
+                        } else if (e.key === 'Escape') {
+                          setIsEditingTitle(false);
+                        }
+                      }}
+                      className="font-bold text-lg"
+                      aria-label="Edit chat title"
+                    />
+                  </div>
+                ) : (
+                  <h1 className="text-lg font-bold flex items-center group relative">
+                    <img 
+                      src="/images/logo.png" 
+                      alt="Doogie Chat Bot Logo" 
+                      className="h-8 w-auto mr-2" 
+                      aria-hidden="true"
+                    />
+                    <span className="cursor-pointer group-hover:text-primary-600 dark:group-hover:text-primary-400">
+                      {title}
+                      {router.pathname.startsWith('/chat') && router.query.id && (
+                        <button 
+                          className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsEditingTitle(true);
+                          }}
+                          aria-label="Edit title"
+                          title="Edit title"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  </h1>
+                )}
+              </div>
+              
+              {/* Right section - profile dropdown */}
+              <div className="flex justify-end">
+                <div className={`${hideDefaultSidebar || !isSidebarVisible ? 'block' : 'hidden md:block'} relative`}>
+                  {isAuthenticated ? (
+                    <ProfileDropdown user={user} logout={logout} isAdmin={isAdmin} />
+                  ) : (
+                    <Link 
+                      href="/login" 
+                      className="flex items-center p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
+                      aria-label="Login"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                      </svg>
+                      <span className="ml-2 hidden md:inline">Login</span>
+                    </Link>
+                  )}
+                </div>
+              </div>
             </div>
             
             {children}
@@ -489,10 +592,10 @@ const Layout: React.FC<LayoutProps> = ({
           
           {/* Footer */}
           <footer 
-            className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-2 text-center"
+            className="p-2 text-center text-xs text-gray-500 dark:text-gray-400"
             role={ariaLandmarks.contentinfo}
           >
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <p>
               &copy; {new Date().getFullYear()} Doogie Chat Bot
             </p>
           </footer>
