@@ -470,10 +470,30 @@ class LLMService:
                 chat_models = ["claude-2", "claude-instant-1", "claude-3-opus", "claude-3-sonnet"]
                 embedding_models = []
             
-            # OpenRouter models
+            # OpenRouter models - fetch from API and group by provider
             elif self.provider == "openrouter":
-                chat_models = ["openai/gpt-3.5-turbo", "openai/gpt-4", "anthropic/claude-2"]
-                embedding_models = ["openai/text-embedding-ada-002"]
+                if hasattr(self.client, 'list_models'):
+                    models = await self.client.list_models()
+                    # Group models by provider prefix
+                    model_groups = {}
+                    for model in models:
+                        if model.get("id"):
+                            provider = model["id"].split("/")[0] if "/" in model["id"] else "other"
+                            if provider not in model_groups:
+                                model_groups[provider] = []
+                            model_groups[provider].append(model["id"])
+                    
+                    # Sort groups and models alphabetically
+                    chat_models = []
+                    for provider in sorted(model_groups.keys()):
+                        chat_models.extend(sorted(model_groups[provider]))
+                    
+                    # Embedding models (OpenRouter mostly uses OpenAI embeddings)
+                    embedding_models = ["openai/text-embedding-ada-002"]
+                else:
+                    # Fallback if list_models is not implemented
+                    chat_models = ["openai/gpt-3.5-turbo", "openai/gpt-4", "anthropic/claude-2"]
+                    embedding_models = ["openai/text-embedding-ada-002"]
             
             # Deepseek models
             elif self.provider == "deepseek":

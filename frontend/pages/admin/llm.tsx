@@ -40,6 +40,7 @@ interface ProviderConfig {
   available_models: string[];
   embedding_models: string[];
   isPolling: boolean;
+  filteredModels?: string[];
 }
 const LLMConfiguration = () => {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
@@ -566,15 +567,66 @@ const LLMConfiguration = () => {
                                   Polling for available models...
                                 </div>
                               ) : providerConfig.available_models.length > 0 ? (
-                                <select
-                                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                                  value={providerConfig.model}
-                                  onChange={(e) => updateModel(providerConfig.id, e.target.value)}
-                                >
-                                  {providerConfig.available_models.map((model) => (
-                                    <option key={model} value={model}>{model}</option>
-                                  ))}
-                                </select>
+                                providerConfig.id === 'openrouter' ? (
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      placeholder="Search models..."
+                                      className="w-full p-2 mb-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                                      onChange={(e) => {
+                                        const searchTerm = e.target.value.toLowerCase();
+                                        const filtered = providerConfig.available_models.filter(model =>
+                                          model.toLowerCase().includes(searchTerm)
+                                        );
+                                        setProviderConfigs(prev =>
+                                          prev.map(pc =>
+                                            pc.id === providerConfig.id
+                                              ? {...pc, filteredModels: filtered}
+                                              : pc
+                                          )
+                                        );
+                                      }}
+                                    />
+                                    <div className="max-h-60 overflow-y-auto border rounded dark:bg-gray-700 dark:border-gray-600">
+                                      {Object.entries(
+                                        (providerConfig.filteredModels || providerConfig.available_models)
+                                          .reduce((acc: Record<string, string[]>, model: string) => {
+                                            const [provider] = model.split('/');
+                                            if (!acc[provider]) acc[provider] = [];
+                                            acc[provider].push(model);
+                                            return acc;
+                                          }, {} as Record<string, string[]>)
+                                      ).map(([provider, models]: [string, string[]]) => (
+                                        <div key={provider} className="border-b dark:border-gray-600">
+                                          <div className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-800">
+                                            {provider}
+                                          </div>
+                                          {models.map(model => (
+                                            <div
+                                              key={model}
+                                              className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 ${
+                                                providerConfig.model === model ? 'bg-blue-50 dark:bg-blue-900/30' : ''
+                                              }`}
+                                              onClick={() => updateModel(providerConfig.id, model)}
+                                            >
+                                              {model.split('/')[1] || model}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <select
+                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                                    value={providerConfig.model}
+                                    onChange={(e) => updateModel(providerConfig.id, e.target.value)}
+                                  >
+                                    {providerConfig.available_models.map((model) => (
+                                      <option key={model} value={model}>{model}</option>
+                                    ))}
+                                  </select>
+                                )
                               ) : (
                                 <div className="flex">
                                   <input
