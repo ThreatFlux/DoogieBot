@@ -11,8 +11,8 @@ services:
       - "3000:3000"  # Frontend
       - "8000:8000"  # Backend API
     volumes:
-      # Only mount necessary data volumes
-      - ./data:/app/data
+      # Mount the backend directory to make DB and Alembic config available
+      - ./backend:/app/backend
     environment:
       - NODE_ENV=production
       - PYTHONPATH=/app
