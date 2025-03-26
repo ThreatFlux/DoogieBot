@@ -11,8 +11,8 @@ services:
       - "3000:3000"  # Frontend
       - "8000:8000"  # Backend API
     volumes:
-      # Mount the specific database file for persistence
-      - ./backend/doogie.db:/app/backend/doogie.db
+      # Mount the backend directory to make DB and Alembic config available
+      - ./backend:/app/backend
     environment:
       - NODE_ENV=production
       - PYTHONPATH=/app
