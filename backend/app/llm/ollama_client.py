@@ -30,13 +30,17 @@ class OllamaClient(LLMClient):
         Args:
             model: Model name
             api_key: Not used for Ollama
-            base_url: Base URL for Ollama API
+            base_url: Base URL for Ollama API (optional, uses settings.OLLAMA_BASE_URL if not provided)
             embedding_model: Model to use for embeddings (if different from chat model)
         """
         super().__init__(model=model, api_key=api_key, base_url=base_url, embedding_model=embedding_model)
+        # Always use the provided base URL or fall back to the default Ollama base URL
         self.base_url = base_url or settings.OLLAMA_BASE_URL
+        
+        # Log a warning instead of raising an error if base_url is not set
+        # This allows the UI to work without requiring a base_url
         if not self.base_url:
-            raise ValueError("Ollama base URL is required")
+            logger.warning("Ollama base URL is not set. API calls will likely fail.")
     
     async def generate(
         self,
@@ -227,7 +231,6 @@ class OllamaClient(LLMClient):
         except Exception as e:
             logger.error(f"Error listing Ollama models: {str(e)}")
             return []
-    
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
         Get embeddings for a list of texts using Ollama.
@@ -238,6 +241,11 @@ class OllamaClient(LLMClient):
         Returns:
             List of embedding vectors
         """
+        # Use the embedding model if set, otherwise use the chat model
+        model_to_use = self.embedding_model or self.model
+        logger.info(f"Using model {model_to_use} for embeddings")
+        
+        url = f"{self.base_url}/api/embeddings"
         url = f"{self.base_url}/api/embeddings"
         
         headers = {
@@ -257,7 +265,7 @@ class OllamaClient(LLMClient):
                     logger.info(f"Processing embedding {i+1}/{len(texts)}")
                 
                 payload = {
-                    "model": self.embedding_model or self.model,  # Use embedding model if set, else fall back to chat model
+                    "model": model_to_use,  # Use the model we determined above
                     "prompt": text
                 }
                 

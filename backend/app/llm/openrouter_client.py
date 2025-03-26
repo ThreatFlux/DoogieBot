@@ -21,7 +21,7 @@ class OpenRouterClient(LLMClient):
         self,
         model: str = "openai/gpt-3.5-turbo",
         api_key: Optional[str] = None,
-        base_url: Optional[str] = "https://openrouter.ai/api/v1",
+        base_url: Optional[str] = "https://openrouter.ai/api",
         embedding_model: Optional[str] = None
     ):
         """
@@ -41,9 +41,8 @@ class OpenRouterClient(LLMClient):
         if not self.api_key:
             raise ValueError("OpenRouter API key is required")
         
-        # Ensure base_url is set to default if None
-        if self.base_url is None:
-            self.base_url = "https://openrouter.ai/api/v1"
+        # Always use the correct base URL for OpenRouter
+        self.base_url = "https://openrouter.ai/api"
     
     async def generate(
         self,
@@ -64,9 +63,8 @@ class OpenRouterClient(LLMClient):
         Returns:
             Response from OpenRouter or an async generator for streaming
         """
-        # Ensure base_url is set
-        if not self.base_url or not self.base_url.startswith("http"):
-            self.base_url = "https://openrouter.ai/api/v1"
+        # Always use the correct base URL for OpenRouter
+        self.base_url = "https://openrouter.ai/api/v1"
             
         url = f"{self.base_url}/chat/completions"
         
@@ -166,15 +164,17 @@ class OpenRouterClient(LLMClient):
         """
         # Ensure URL is valid
         if not url.startswith("http"):
-            # If base_url is not set or invalid, use the default
-            if not self.base_url or not self.base_url.startswith("http"):
-                self.base_url = "https://openrouter.ai/api/v1"
+            # Always use the correct base URL for OpenRouter
+            self.base_url = "https://openrouter.ai/api/v1"
             
             # If url is just a path, prepend the base_url
             if url.startswith("/"):
                 url = f"{self.base_url}{url}"
             else:
                 url = f"{self.base_url}/{url}"
+                
+            # Ensure we don't have duplicate v1 in the path
+            url = url.replace("/v1/v1/", "/v1/")
         
         logger.debug(f"Starting OpenRouter streaming request to {url}")
         async with aiohttp.ClientSession() as session:
@@ -190,6 +190,7 @@ class OpenRouterClient(LLMClient):
                 content = ""
                 token_count = 0
                 chunk_count = 0
+                has_reasoning_support = False  # Flag to track if model provides reasoning
                 
                 # Process the stream
                 logger.debug(f"Starting to process OpenRouter stream")
@@ -237,9 +238,15 @@ class OpenRouterClient(LLMClient):
                         
                         if delta_content and isinstance(delta_content, str):
                             chunk_count += 1
+                            # Remove "\boxed{" prefix if present
+                            if delta_content.startswith(r"\boxed{"):
+                                delta_content = delta_content[7:]
                             content += delta_content
                             
                         if delta_reasoning and isinstance(delta_reasoning, str):
+                            # Mark that this model supports reasoning
+                            has_reasoning_support = True
+                            
                             # Initialize reasoning buffer if needed
                             if not hasattr(self, '_current_reasoning'):
                                 self._current_reasoning = ""
@@ -255,36 +262,43 @@ class OpenRouterClient(LLMClient):
                                         content += f"\n<think>{self._current_reasoning.strip()}</think>\n"
                                     self._current_reasoning = ""
                                     self._reasoning_complete = True
-                            token_count += 1  # Approximate token count
-                            
-                            # Log every 10th chunk to avoid excessive logging
-                            if chunk_count % 10 == 0:
-                                logger.debug(f"Received chunk {chunk_count} from OpenRouter: '{delta_content}' (total: {len(content)} chars)")
-                            
-                            # Calculate tokens per second
-                            tokens_per_second = self.calculate_tokens_per_second(start_time, token_count)
-                            
-                            logger.debug(f"Yielding chunk {chunk_count} at {time.time()}")
-                            
-                            # Yield immediately without any delay
-                            yield {
-                                "content": content,
-                                "model": self.model,
-                                "provider": "openrouter",
-                                "tokens": token_count,
-                                "tokens_per_second": tokens_per_second,
-                                "done": False,
-                                "timestamp": time.time()
-                            }
-                            
-                            # Ensure the chunk is sent immediately
-                            await asyncio.sleep(0)
+                        
+                        # Always increment token count for each chunk
+                        token_count += 1
+                        
+                        # Log every 10th chunk to avoid excessive logging
+                        if chunk_count % 10 == 0:
+                            logger.debug(f"Received chunk {chunk_count} from OpenRouter: '{delta_content}' (total: {len(content)} chars)")
+                        
+                        # Calculate tokens per second
+                        tokens_per_second = self.calculate_tokens_per_second(start_time, token_count)
+                        
+                        logger.debug(f"Yielding chunk {chunk_count} at {time.time()}")
+                        
+                        # Yield immediately without any delay
+                        yield {
+                            "content": content,
+                            "model": self.model,
+                            "provider": "openrouter",
+                            "tokens": token_count,
+                            "tokens_per_second": tokens_per_second,
+                            "done": False,
+                            "timestamp": time.time()
+                        }
+                        
+                        # Ensure the chunk is sent immediately
+                        await asyncio.sleep(0)
                     except json.JSONDecodeError:
                         logger.warning(f"Could not parse line: {line}")
                 
                 logger.debug(f"OpenRouter stream complete, yielding final chunk with done=True")
                 # Final yield with done=True
                 tokens_per_second = self.calculate_tokens_per_second(start_time, token_count)
+                
+                # Add a note if the model doesn't support reasoning
+                if not has_reasoning_support and self._current_reasoning == "":
+                    logger.info(f"Model {self.model} does not appear to support reasoning output")
+                
                 yield {
                     "content": content,
                     "model": self.model,
@@ -302,11 +316,12 @@ class OpenRouterClient(LLMClient):
         Returns:
             List of model info dictionaries
         """
-        # Ensure base_url is set
-        if not self.base_url or not self.base_url.startswith("http"):
-            self.base_url = "https://openrouter.ai/api/v1"
+        # Always use the correct base URL for OpenRouter
+        self.base_url = "https://openrouter.ai/api/v1"
             
+        # The correct endpoint for OpenRouter models
         url = f"{self.base_url}/models"
+        logger.info(f"Using OpenRouter models URL: {url}")
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -330,10 +345,12 @@ class OpenRouterClient(LLMClient):
                         return []
                     
                     result = await response.json()
+                    logger.info(f"OpenRouter API response: {result}")
                     models = result.get("data", [])
                     logger.info(f"Received {len(models)} models from OpenRouter")
                     if models:
                         logger.debug(f"First model: {models[0].get('id')}")
+                        logger.info(f"Sample models: {[m.get('id') for m in models[:5] if m.get('id')]}")
                     return models
         except Exception as e:
             logger.error(f"Error listing OpenRouter models: {str(e)}")
@@ -352,10 +369,10 @@ class OpenRouterClient(LLMClient):
         # OpenRouter doesn't currently support embeddings, so we'll use OpenAI's embeddings
         # through OpenRouter by specifying an OpenAI model
         
-        # Ensure base_url is set
-        if not self.base_url or not self.base_url.startswith("http"):
-            self.base_url = "https://openrouter.ai/api/v1"
+        # Always use the correct base URL for OpenRouter
+        self.base_url = "https://openrouter.ai/api/v1"
             
+        # Construct the embeddings URL
         url = f"{self.base_url}/embeddings"
         
         headers = {

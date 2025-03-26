@@ -568,7 +568,7 @@ async def reprocess_all_documents(
     # Get active LLM config for logging
     from app.services.llm_config import LLMConfigService
     active_config = LLMConfigService.get_active_config(db)
-    provider = embedding_provider or (active_config.provider if active_config else "default")
+    provider = embedding_provider or (active_config.embedding_provider if active_config else "default")
     model = embedding_model or (active_config.embedding_model if active_config else "default")
     
     # Use provided chunk size/overlap or default from settings

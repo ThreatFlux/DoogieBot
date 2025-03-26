@@ -60,7 +60,7 @@ class DocumentProcessor:
             
             if active_config:
                 if not provider:
-                    provider = active_config.provider
+                    provider = active_config.embedding_provider
                 if not model:
                     model = active_config.embedding_model
             
@@ -123,7 +123,7 @@ class DocumentProcessor:
                     from app.services.llm_config import LLMConfigService
                     active_config = LLMConfigService.get_active_config(self.db)
                     if active_config:
-                        logger.info(f"Active LLM config: Provider={active_config.provider}, Model={active_config.model}, Embedding Model={active_config.embedding_model}")
+                        logger.info(f"Active LLM config: Chat Provider={active_config.chat_provider}, Embedding Provider={active_config.embedding_provider}, Model={active_config.model}, Embedding Model={active_config.embedding_model}")
                     else:
                         logger.warning("No active LLM config found")
                     

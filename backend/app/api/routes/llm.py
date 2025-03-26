@@ -9,6 +9,8 @@ from app.db.base import get_db
 from app.models.user import User
 from app.services.llm import LLMService
 from app.services.llm_config import LLMConfigService
+from app.services.embedding_config import EmbeddingConfigService
+from app.services.reranking_config import RerankingConfigService
 from app.schemas.llm import (
     LLMConfigCreate,
     LLMConfigUpdate,
@@ -16,6 +18,16 @@ from app.schemas.llm import (
     LLMProviderResponse,
     LLMProviderInfo,
     ModelsResponse
+)
+from app.schemas.embedding import (
+    EmbeddingConfigCreate,
+    EmbeddingConfigUpdate,
+    EmbeddingConfigResponse
+)
+from app.schemas.reranking import (
+    RerankingConfigCreate,
+    RerankingConfigUpdate,
+    RerankingConfigResponse
 )
 from app.utils.deps import get_current_user, get_current_admin_user
 from app.core.config import settings
@@ -274,3 +286,203 @@ async def delete_llm_config(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+    
+# Embedding Configuration Endpoints
+# These endpoints are kept in the LLM router to maintain compatibility with the frontend
+@router.post("/admin/embedding/config", response_model=EmbeddingConfigResponse)
+async def create_embedding_config(
+    config: EmbeddingConfigCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Create a new embedding configuration. Admin only.
+    """
+    db_config = EmbeddingConfigService.create_config(db, config)
+    return db_config
+
+@router.put("/admin/embedding/config/{config_id}", response_model=EmbeddingConfigResponse)
+async def update_embedding_config(
+    config_id: str,
+    config: EmbeddingConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Update an existing embedding configuration. Admin only.
+    """
+    db_config = EmbeddingConfigService.update_config(db, config_id, config)
+    if not db_config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Configuration not found"
+        )
+    return db_config
+
+@router.get("/admin/embedding/config", response_model=List[EmbeddingConfigResponse])
+async def get_all_embedding_configs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Get all embedding configurations. Admin only.
+    """
+    configs = EmbeddingConfigService.get_all_configs(db)
+    return configs
+
+@router.get("/admin/embedding/config/active", response_model=EmbeddingConfigResponse)
+async def get_active_embedding_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Get the active embedding configuration. Admin only.
+    """
+    config = EmbeddingConfigService.get_active_config(db)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active configuration found"
+        )
+    return config
+
+@router.post("/admin/embedding/config/{config_id}/activate", response_model=EmbeddingConfigResponse)
+async def activate_embedding_config(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Set an embedding configuration as active. Admin only.
+    """
+    config = EmbeddingConfigService.set_active_config(db, config_id)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Configuration not found"
+        )
+    return config
+
+@router.delete("/admin/embedding/config/{config_id}", response_model=Dict[str, Any])
+async def delete_embedding_config(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Delete an embedding configuration. Admin only.
+    Cannot delete the active configuration.
+    """
+    try:
+        success = EmbeddingConfigService.delete_config(db, config_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Configuration not found"
+            )
+        return {"status": "success", "message": "Configuration deleted"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+# Reranking Configuration Endpoints
+# These endpoints are added to the LLM router to maintain consistency with embedding endpoints
+@router.post("/admin/reranking/config", response_model=RerankingConfigResponse)
+async def create_reranking_config(
+    config: RerankingConfigCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Create a new reranking configuration. Admin only.
+    """
+    db_config = RerankingConfigService.create_config(db, config)
+    return db_config
+
+@router.put("/admin/reranking/config/{config_id}", response_model=RerankingConfigResponse)
+async def update_reranking_config(
+    config_id: str,
+    config: RerankingConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Update an existing reranking configuration. Admin only.
+    """
+    db_config = RerankingConfigService.update_config(db, config_id, config)
+    if not db_config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Configuration not found"
+        )
+    return db_config
+
+@router.get("/admin/reranking/config", response_model=List[RerankingConfigResponse])
+async def get_all_reranking_configs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Get all reranking configurations. Admin only.
+    """
+    configs = RerankingConfigService.get_all_configs(db)
+    return configs
+
+@router.get("/admin/reranking/config/active", response_model=RerankingConfigResponse)
+async def get_active_reranking_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Get the active reranking configuration. Admin only.
+    """
+    config = RerankingConfigService.get_active_config(db)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active configuration found"
+        )
+    return config
+
+@router.post("/admin/reranking/config/{config_id}/activate", response_model=RerankingConfigResponse)
+async def activate_reranking_config(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Set a reranking configuration as active. Admin only.
+    """
+    config = RerankingConfigService.set_active_config(db, config_id)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Configuration not found"
+        )
+    return config
+
+@router.delete("/admin/reranking/config/{config_id}", response_model=Dict[str, Any])
+async def delete_reranking_config(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Delete a reranking configuration. Admin only.
+    Cannot delete the active configuration.
+    """
+    try:
+        success = RerankingConfigService.delete_config(db, config_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Configuration not found"
+            )
+        return {"status": "success", "message": "Configuration deleted"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+            )

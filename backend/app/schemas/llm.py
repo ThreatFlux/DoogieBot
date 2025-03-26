@@ -4,7 +4,8 @@ from datetime import datetime
 
 class LLMConfigBase(BaseModel):
     """Base schema for LLM configuration."""
-    provider: str
+    chat_provider: str
+    embedding_provider: str
     model: str
     embedding_model: str
     system_prompt: str = Field(..., description="Global system prompt used for all LLM providers")
@@ -18,7 +19,8 @@ class LLMConfigCreate(LLMConfigBase):
 
 class LLMConfigUpdate(BaseModel):
     """Schema for updating an LLM configuration."""
-    provider: Optional[str] = None
+    chat_provider: Optional[str] = None
+    embedding_provider: Optional[str] = None
     model: Optional[str] = None
     embedding_model: Optional[str] = None
     system_prompt: Optional[str] = None

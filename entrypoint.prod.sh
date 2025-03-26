@@ -5,8 +5,8 @@ set -e
 run_migrations() {
     echo "Running database migrations..."
     cd /app/backend
-    # Explicitly specify the alembic.ini file path
-    python -m alembic -c /app/backend/alembic.ini upgrade head
+    # Alembic should find alembic.ini in the current directory
+    python -m alembic upgrade head
     
     # Run the tag tables creation script
     echo "Creating tag tables..."

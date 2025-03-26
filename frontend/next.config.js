@@ -6,18 +6,6 @@ const nextConfig = {
   reactStrictMode: !isDev,
   // Production-specific optimizations
   productionBrowserSourceMaps: false,
-  // Development-specific configurations
-  ...(isDev && {
-    webpackDevMiddleware: (config) => {
-      // Required for hot reloading in Docker
-      config.watchOptions = {
-        poll: 1000, // Check for changes every second
-        aggregateTimeout: 300, // Delay before rebuilding
-        ignored: /node_modules/,
-      };
-      return config;
-    },
-  }),
   // API rewrites for both dev and prod
   async rewrites() {
     return [

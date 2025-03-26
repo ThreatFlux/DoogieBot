@@ -13,7 +13,7 @@ logging.basicConfig(
 # Configure SQLAlchemy logging separately
 sqlalchemy_logger = logging.getLogger('sqlalchemy.engine')
 sqlalchemy_logger.setLevel(
-    logging.INFO if os.getenv("DISABLE_SQL_LOGS", "false").lower() == "true" else logging.DEBUG
+    logging.WARNING if os.getenv("DISABLE_SQL_LOGS", "false").lower() == "true" else logging.DEBUG
 )
 
 class Settings(BaseSettings):
