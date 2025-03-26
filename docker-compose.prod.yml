@@ -11,8 +11,8 @@ services:
       - "3000:3000"  # Frontend
       - "8000:8000"  # Backend API
     volumes:
-      # Only mount necessary data volumes
-      - ./data:/app/data
+      # Mount the specific database file for persistence
+      - ./backend/doogie.db:/app/backend/doogie.db
     environment:
       - NODE_ENV=production
       - PYTHONPATH=/app
