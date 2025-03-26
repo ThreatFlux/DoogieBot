@@ -9,7 +9,7 @@ alembic>=1.15.1
 
 # Authentication
 python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
+passlib[bcrypt]>=1.7.5 # Updated to fix compatibility with bcrypt >= 4.1.0
 bcrypt>=4.1.2
 python-multipart>=0.0.9
 
