@@ -27,6 +27,7 @@ flowchart TD
         OpenRouter[OpenRouter]
         Deepseek[Deepseek]
         Anthropic[Anthropic]
+        GoogleGemini[Google Gemini] # Added
     end
     
     LLM --- External Services
@@ -48,8 +49,8 @@ flowchart TD
 
 3. **External LLM Integration**
    - No local LLM hosting
-   - Flexible provider selection through admin interface
-   - Support for both chat and embedding models
+   - Flexible provider selection through admin interface (Supports OpenAI, Ollama, Anthropic, OpenRouter, Google Gemini, etc.)
+   - Support for both chat and embedding models (provider-dependent)
 
 4. **Database Design**
    - SQLite3 for simplicity and portability

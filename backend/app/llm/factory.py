@@ -5,6 +5,9 @@ from app.llm.base import LLMClient
 from app.llm.openai_client import OpenAIClient
 from app.llm.ollama_client import OllamaClient
 from app.llm.openrouter_client import OpenRouterClient
+# Import newly added clients
+from app.llm.anthropic_client import AnthropicClient
+from app.llm.google_gemini_client import GoogleGeminiClient
 from app.core.config import settings
 
 # Set up logging
@@ -13,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 # Import other LLM clients as needed
 # Uncomment these when the actual client implementations are available
-# from app.llm.anthropic_client import AnthropicClient
-# from app.llm.openrouter_client import OpenRouterClient
 # from app.llm.deepseek_client import DeepseekClient
 # from app.llm.lmstudio_client import LMStudioClient
 
@@ -27,9 +28,9 @@ class LLMFactory:
     _registry: Dict[str, Type[LLMClient]] = {
         "openai": OpenAIClient,
         "ollama": OllamaClient,
-        # These are placeholders - they will use OpenAIClient until proper implementations are available
-        "anthropic": OpenAIClient,  # Placeholder using OpenAIClient
+        "anthropic": AnthropicClient, # Use the actual Anthropic client
         "openrouter": OpenRouterClient,
+        "google_gemini": GoogleGeminiClient, # Add Google Gemini client
         # "deepseek": DeepseekClient,
         # "lmstudio": LMStudioClient,
     }
@@ -220,13 +221,15 @@ class LLMFactory:
         elif provider == "ollama":
             return "llama2"
         elif provider == "anthropic":
-            return "claude-2"
+            return "claude-3-opus-20240229" # Updated default for Anthropic
         elif provider == "openrouter":
             return "openai/gpt-3.5-turbo"
-        elif provider == "deepseek":
-            return "deepseek-chat"
-        elif provider == "lmstudio":
-            return "lmstudio-model"
+        elif provider == "google_gemini":
+            return "gemini-pro" # Default for Google Gemini
+        # elif provider == "deepseek":
+        #     return "deepseek-chat"
+        # elif provider == "lmstudio":
+        #     return "lmstudio-model"
         else:
             return "gpt-3.5-turbo"  # Default fallback
     
@@ -245,13 +248,13 @@ class LLMFactory:
             "available": bool(settings.OPENAI_API_KEY),
             "default_model": settings.DEFAULT_CHAT_MODEL,
             "requires_api_key": True,
-            "requires_base_url": False
+            "requires_base_url": False # Base URL is optional (e.g., for Azure)
         }
         
         # Check Ollama
         providers["ollama"] = {
             "available": bool(settings.OLLAMA_BASE_URL),
-            "default_model": "llama2",
+            "default_model": "llama2", # Consider making this configurable or dynamic
             "requires_api_key": False,
             "requires_base_url": True
         }
@@ -259,15 +262,23 @@ class LLMFactory:
         # Check Anthropic
         providers["anthropic"] = {
             "available": bool(settings.ANTHROPIC_API_KEY),
-            "default_model": "claude-2",
+            "default_model": cls._get_default_model("anthropic"), # Use the method
             "requires_api_key": True,
-            "requires_base_url": False
+            "requires_base_url": False # Base URL is optional
         }
         
         # Check OpenRouter
         providers["openrouter"] = {
             "available": bool(settings.OPENROUTER_API_KEY),
-            "default_model": "openai/gpt-3.5-turbo",
+            "default_model": cls._get_default_model("openrouter"), # Use the method
+            "requires_api_key": True,
+            "requires_base_url": False # Uses OpenRouter's base URL implicitly
+        }
+        
+        # Check Google Gemini
+        providers["google_gemini"] = {
+            "available": bool(settings.GOOGLE_GEMINI_API_KEY),
+            "default_model": cls._get_default_model("google_gemini"), # Use the method
             "requires_api_key": True,
             "requires_base_url": False
         }
@@ -275,14 +286,14 @@ class LLMFactory:
         # Check other providers as they are implemented
         # providers["deepseek"] = {
         #     "available": bool(settings.DEEPSEEK_API_KEY),
-        #     "default_model": "deepseek-chat",
+        #     "default_model": cls._get_default_model("deepseek"),
         #     "requires_api_key": True,
         #     "requires_base_url": False
         # }
         
         # providers["lmstudio"] = {
         #     "available": bool(settings.LM_STUDIO_BASE_URL),
-        #     "default_model": "lmstudio-model",
+        #     "default_model": cls._get_default_model("lmstudio"),
         #     "requires_api_key": False,
         #     "requires_base_url": True
         # }

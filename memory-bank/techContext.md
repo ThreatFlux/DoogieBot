@@ -78,6 +78,14 @@ doogie6/
 │   │   ├── api/
 │   │   ├── core/
 │   │   ├── db/
+│   │   ├── llm/ # Added LLM client directory
+│   │   │   ├── base.py
+│   │   │   ├── factory.py
+│   │   │   ├── openai_client.py
+│   │   │   ├── ollama_client.py
+│   │   │   ├── openrouter_client.py
+│   │   │   ├── anthropic_client.py # Added
+│   │   │   └── google_gemini_client.py # Added
 │   │   ├── models/
 │   │   ├── rag/
 │   │   ├── schemas/
@@ -153,6 +161,8 @@ graphrag>=1.0.0  # Specialized graph library for RAG operations
 pypdf2>=3.0.0
 python-docx>=1.0.0
 markdown>=3.5
+anthropic>=0.21.3 # Added
+google-generativeai>=0.4.0 # Added
 ```
 
 #### Frontend
@@ -202,6 +212,7 @@ OPENAI_API_KEY=your-openai-key
 ANTHROPIC_API_KEY=your-anthropic-key
 OPENROUTER_API_KEY=your-openrouter-key
 DEEPSEEK_API_KEY=your-deepseek-key
+GOOGLE_GEMINI_API_KEY=your-google-gemini-key # Added
 OLLAMA_BASE_URL=http://your-ollama-server:11434
 LM_STUDIO_BASE_URL=http://your-lmstudio-server:8000
 

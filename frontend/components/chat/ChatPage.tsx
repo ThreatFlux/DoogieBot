@@ -667,21 +667,22 @@ export const CleanChatPage = () => {
         // Refresh the chat list to ensure the chat appears with the correct title
         loadChats();
         
-        // Refresh the current chat to ensure we have the latest messages from the database
-        if (currentChat) {
-          console.log('Refreshing current chat from database');
-          const refreshChat = async () => {
-            try {
-              const { chat: refreshedChat } = await getChat(currentChat.id);
-              if (refreshedChat) {
-                setCurrentChat(refreshedChat);
-              }
-            } catch (err) {
-              console.error('Error refreshing chat:', err);
-            }
-          };
-          refreshChat();
-        }
+        // // Refresh the current chat to ensure we have the latest messages from the database
+        // // Removed this refresh as it causes a race condition. The local state already has the final message.
+        // if (currentChat) {
+        //   console.log('Refreshing current chat from database');
+        //   const refreshChat = async () => {
+        //     try {
+        //       const { chat: refreshedChat } = await getChat(currentChat.id);
+        //       if (refreshedChat) {
+        //         setCurrentChat(refreshedChat);
+        //       }
+        //     } catch (err) {
+        //       console.error('Error refreshing chat:', err);
+        //     }
+        //   };
+        //   refreshChat();
+        // }
         
         showNotification('Response completed successfully', 'success');
         
