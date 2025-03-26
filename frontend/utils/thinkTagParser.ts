@@ -11,7 +11,12 @@ interface ThinkPart {
  * @param content The content to parse
  * @returns Array of parsed parts
  */
-export const parseThinkTags = (content: string): ThinkPart[] => {
+export const parseThinkTags = (content: string | undefined | null): ThinkPart[] => {
+  // Guard clause for undefined, null, or non-string content
+  if (typeof content !== 'string' || content === '') {
+    return [];
+  }
+
   const parts: ThinkPart[] = [];
   const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
   const incompleteThinkRegex = /<think>([\s\S]*)$/;

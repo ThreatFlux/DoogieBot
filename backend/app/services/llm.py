@@ -4,9 +4,13 @@ from sqlalchemy.orm import Session
 import time
 import json
 import asyncio
+import google.generativeai as genai # Import google library
 
 from app.llm.factory import LLMFactory
 from app.llm.base import LLMClient
+# Import specific clients for type checking
+from app.llm.anthropic_client import AnthropicClient
+from app.llm.google_gemini_client import GoogleGeminiClient
 from app.services.chat import ChatService
 from app.services.llm_config import LLMConfigService
 from app.services.embedding_config import EmbeddingConfigService
@@ -288,96 +292,122 @@ class LLMService:
         
         # Initialize variables for tracking the response
         full_content = ""
-        tokens = 0
-        tokens_per_second = 0
-        model = self.model or settings.DEFAULT_CHAT_MODEL
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        tokens_per_second = 0.0
+        finish_reason = None
+        model = self.model or settings.DEFAULT_CHAT_MODEL # Start with configured model
         provider = self.provider
         chunk_count = 0
+        error_occurred = False
+        error_message = ""
         
         try:
-            # Get streaming response from LLM with timeout
-            logger.debug(f"Requesting streaming response from LLM client")
-            timeout = settings.RAG_INDEX_BUILD_TIMEOUT
+            # Get streaming response from LLM client
+            logger.debug(f"Requesting streaming response from LLM client for chat {chat_id}")
+            
+            # Prepare arguments for the generate call
+            generate_args = {
+                "messages": formatted_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True,
+            }
+            # Conditionally add system_prompt for clients that support it as a separate argument
+            if isinstance(self.chat_client, (AnthropicClient, GoogleGeminiClient)):
+                generate_args["system_prompt"] = self.system_prompt
+                logger.debug("Passing system_prompt as a separate argument to generate()")
+            else:
+                 # For other clients (like OpenAI), system prompt is expected in messages list
+                 logger.debug("System prompt included in messages list for generate()")
 
-            try:
-                response_stream = await asyncio.wait_for(
-                    self.chat_client.generate(
-                        formatted_messages,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        stream=True
-                    ),
-                    timeout=60  # 60 second timeout
-                )
 
-                logger.debug(f"Got response_stream from LLM client")
-                logger.debug(f"Starting to iterate through response_stream chunks")
+            # Await the generate call to get the async generator
+            response_stream = await self.chat_client.generate(**generate_args)
 
-                async for chunk in response_stream:
-                    chunk_count += 1
+            logger.debug(f"Got response_stream generator from LLM client")
+            logger.debug(f"Starting to iterate through response_stream chunks")
 
-                    # Update tracking variables
-                    full_content = chunk["content"]
-                    tokens = chunk.get("tokens", 0)
-                    tokens_per_second = chunk.get("tokens_per_second", 0)
+            async for chunk in response_stream:
+                chunk_count += 1
+                chunk_type = chunk.get("type")
+                
+                logger.debug(f"Received chunk {chunk_count} of type '{chunk_type}' for chat {chat_id}")
+
+                # Yield the raw chunk immediately
+                yield chunk
+
+                # Process chunk based on type
+                if chunk_type == "start":
+                    prompt_tokens = chunk.get("usage", {}).get("prompt_tokens", 0)
+                    # Potentially update model/provider if provided in start event
                     model = chunk.get("model", model)
                     provider = chunk.get("provider", provider)
-                    done = chunk.get("done", False)
+                elif chunk_type == "delta":
+                    delta_content = chunk.get("content", "")
+                    if delta_content:
+                        full_content += delta_content
+                elif chunk_type == "end":
+                    usage = chunk.get("usage", {})
+                    prompt_tokens = usage.get("prompt_tokens", prompt_tokens) # Use final prompt tokens if available
+                    completion_tokens = usage.get("completion_tokens", 0)
+                    total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens) # Calculate if not provided
+                    tokens_per_second = chunk.get("tokens_per_second", 0.0)
+                    finish_reason = chunk.get("finish_reason")
+                    # Potentially update model/provider if provided in end event
+                    model = chunk.get("model", model)
+                    provider = chunk.get("provider", provider)
+                    logger.debug(f"Stream ended for chat {chat_id}. Finish reason: {finish_reason}")
+                    break # Exit loop after processing end event
+                elif chunk_type == "error":
+                    error_message = chunk.get("error", "Unknown streaming error")
+                    logger.error(f"Error received during stream for chat {chat_id}: {error_message}")
+                    error_occurred = True
+                    full_content = f"An error occurred: {error_message}" # Set content to error message
+                    break # Exit loop on error
 
-                    # Log every 5th chunk to avoid excessive logging
-                    if chunk_count % 5 == 0 or done:
-                        logger.debug(f"Streaming chunk {chunk_count} for chat {chat_id}: {full_content[-30:] if len(full_content) > 30 else full_content}... (done: {done})")
+                # Add a small delay to prevent overwhelming the client, less frequently
+                if chunk_count % 20 == 0:
+                    await asyncio.sleep(0.01)
+                else:
+                    await asyncio.sleep(0) # Yield control briefly
 
-                    # Yield the chunk immediately
-                    logger.debug(f"Yielding chunk {chunk_count} at {time.time()}")
-                    yield chunk
+            # Save the final message OR error message after the loop finishes
+            logger.debug(f"Saving final message/error for chat {chat_id}. Error occurred: {error_occurred}")
+            ChatService.add_message(
+                self.db,
+                chat_id,
+                "assistant",
+                full_content, # Save accumulated content or error message
+                tokens=total_tokens, # Use total tokens from end event or calculated
+                tokens_per_second=tokens_per_second,
+                model=model,
+                provider=provider,
+                context_documents=[doc["id"] for doc in context_documents] if context_documents else None,
+                # Optionally save finish_reason or error status if schema supports it
+            )
+            logger.debug(f"Final message/error saved for chat {chat_id}")
 
-                    # Add a very small delay to prevent overwhelming the client
-                    if chunk_count % 10 == 0:
-                        await asyncio.sleep(0.01)  # 10ms delay every 10 chunks
-                    else:
-                        await asyncio.sleep(0)  # Yield to event loop but don't delay
+        except asyncio.TimeoutError: # This corresponds to the generate call timeout, less likely now
+            logger.error(f"Timeout occurred during initial generation call for chat {chat_id}")
+            error_message = "The LLM took too long to respond initially. Please try again."
+            error_chunk = {
+                "content": error_message,
+                "error": True,
+                "done": True
+            }
+            yield error_chunk
+            # Save the error message to the chat
+            ChatService.add_message(
+                self.db, chat_id, "assistant", error_message, model=model, provider=provider,
+                context_documents=[doc["id"] for doc in context_documents] if context_documents else None
+            )
+            return # Stop the generator
 
-                    # Save the message when done
-                    if done:
-                        logger.debug(f"Stream complete for chat {chat_id}, saving final message")
-                        ChatService.add_message(
-                            self.db,
-                            chat_id,
-                            "assistant",
-                            full_content,
-                            tokens=tokens,
-                            tokens_per_second=tokens_per_second,
-                            model=model,
-                            provider=provider,
-                            context_documents=[doc["id"] for doc in context_documents] if context_documents else None
-                        )
-                        logger.debug(f"Final message saved for chat {chat_id}")
-
-            except asyncio.TimeoutError:
-                logger.error(f"Timeout waiting for initial response from LLM for chat {chat_id}")
-                error_message = "The LLM took too long to start generating a response. Please try again."
-                error_chunk = {
-                    "content": error_message,
-                    "error": True,
-                    "done": True
-                }
-                yield error_chunk
-
-                # Save the error message to the chat
-                ChatService.add_message(
-                    self.db,
-                    chat_id,
-                    "assistant",
-                    error_message,
-                    model=model,
-                    provider=provider,
-                    context_documents=[doc["id"] for doc in context_documents] if context_documents else None
-                )
-                return
-
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout while streaming response for chat {chat_id}")
+        # This outer except block handles broader errors during the streaming process itself
+        except Exception as e:
+            logger.exception(f"Error in streaming response for chat {chat_id}: {str(e)}")
             error_message = "The response took too long to generate. This might be due to high server load or complexity of the query with RAG processing."
             error_chunk = {
                 "content": error_message,
@@ -644,9 +674,67 @@ class LLMService:
             
             # Anthropic models
             elif self.provider == "anthropic":
-                chat_models = ["claude-2", "claude-instant-1", "claude-3-opus", "claude-3-sonnet"]
-                embedding_models = []
+                # Provide a more comprehensive list of recent models
+                chat_models = [
+                    "claude-3-opus-20240229",
+                    "claude-3-sonnet-20240229",
+                    "claude-3-haiku-20240307",
+                    "claude-2.1",
+                    "claude-2.0",
+                    "claude-instant-1.2"
+                ]
+                embedding_models = [] # Anthropic client doesn't handle embeddings directly
             
+            # Google Gemini models
+            elif self.provider == "google_gemini":
+                try:
+                    # Configure API key before listing models. Prioritize direct key, then active config.
+                    api_key_to_use = self.api_key
+                    if not api_key_to_use:
+                        # Attempt to get key from active config if not passed directly
+                        active_config = LLMConfigService.get_active_config(self.db)
+                        if active_config and active_config.api_key:
+                            api_key_to_use = active_config.api_key
+                    
+                    if api_key_to_use:
+                        genai.configure(api_key=api_key_to_use)
+                    else:
+                        logger.warning("Google Gemini API key not configured. Cannot list models.")
+                        raise ValueError("Google Gemini API key required to list models.")
+
+                    all_models = genai.list_models()
+                    for model in all_models:
+                        # Check supported methods for chat ('generateContent') and embedding ('embedContent')
+                        if 'generateContent' in model.supported_generation_methods:
+                            chat_models.append(model.name)
+                        if 'embedContent' in model.supported_generation_methods:
+                             # Exclude the 'aqa' model which is specialized
+                             if 'aqa' not in model.name:
+                                embedding_models.append(model.name)
+                    
+                    # Sort models for consistency
+                    chat_models.sort()
+                    embedding_models.sort()
+                    
+                except Exception as e:
+                    logger.error(f"Failed to list Google Gemini models dynamically: {e}. Using fallback list.")
+                    # Fallback list based on user-provided image and common models
+                    chat_models = [
+                        "gemini-1.5-flash-002",
+                        "gemini-1.5-flash-exp-0827",
+                        "gemini-2.0-flash-001",
+                        "gemini-2.0-flash-exp",
+                        "gemini-2.0-flash-lite-preview-02-05",
+                        "gemini-2.0-flash-thinking-exp-01-21",
+                        "gemini-2.0-flash-thinking-exp-1219",
+                        "gemini-2.0-pro-exp-02-05",
+                        "gemini-2.5-pro-exp-03-25",
+                        "models/gemini-pro", # Standard model
+                        "models/gemini-1.5-pro-latest", # Standard model
+                    ]
+                    embedding_models = ["models/embedding-001"] # Standard embedding model
+                    chat_models.sort() # Keep it sorted
+
             # OpenRouter models - fetch from API and group by provider
             elif self.provider == "openrouter":
                 if hasattr(self.chat_client, 'list_models'):

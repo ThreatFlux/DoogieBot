@@ -26,7 +26,7 @@ The project has completed its initial setup phase and frontend development phase
 - Dark/light mode theming has been implemented
 - Chat management functionality in the backend
 - API endpoints for chat functionality including streaming responses
-- LLM service integration for chat responses
+- LLM service integration for chat responses (OpenAI, Ollama, OpenRouter, Anthropic, Google Gemini)
 - Frontend-backend connection for chat functionality
 - Streaming response handling for real-time chat interactions
 - Consistent API URL handling across the frontend

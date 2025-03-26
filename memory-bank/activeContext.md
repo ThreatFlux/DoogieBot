@@ -33,6 +33,7 @@ We have completed the initial setup phase (Phase 1) and the frontend development
 - Implemented streaming response handling for real-time chat interactions
 - Added robust error handling for undefined values in the chat interface
 - Implemented a consistent approach for API URL handling across the frontend
+- Added support for Anthropic and Google Gemini as LLM providers
 
 ## Next Steps
 

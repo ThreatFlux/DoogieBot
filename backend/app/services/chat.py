@@ -78,10 +78,10 @@ class ChatService:
         """
         Add a message to a chat.
         """
-        from datetime import datetime
+        from datetime import datetime, UTC
         
         # Get current timestamp
-        current_time = datetime.utcnow()
+        current_time = datetime.now(UTC)
         
         message_id = str(uuid.uuid4())
         message = Message(
