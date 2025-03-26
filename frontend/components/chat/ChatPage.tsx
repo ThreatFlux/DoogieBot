@@ -660,7 +660,17 @@ export const CleanChatPage = () => {
       
       // If this is the final chunk, complete the process
       if (data.done) {
-        console.log('Received final chunk, closing EventSource');
+        console.log('Received final chunk. Final content in state:', data.content); // Log final content
+        // Log the state *before* setting streaming to false
+        setCurrentChat(prev => {
+          if (prev) {
+            const lastMsg = prev.messages?.[prev.messages.length - 1];
+            console.log('State BEFORE setIsStreaming(false): Last message content:', lastMsg?.content?.substring(0, 100) + '...');
+          }
+          return prev; // Return previous state, no actual change here
+        });
+        
+        console.log('Closing EventSource and setting isStreaming to false.');
         closeEventSource();
         setIsStreaming(false);
         

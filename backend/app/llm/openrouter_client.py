@@ -308,6 +308,51 @@ class OpenRouterClient(LLMClient):
                     "done": True
                 }
                 logger.debug(f"OpenRouter streaming complete, yielded {chunk_count} chunks")
+
+    async def get_available_models(self) -> tuple[List[str], List[str]]:
+        """
+        Get available chat and embedding models from OpenRouter.
+
+        Returns:
+            A tuple containing two lists: (chat_model_ids, embedding_model_ids)
+        """
+        logger.info("Getting available models from OpenRouter using get_available_models")
+        all_models_info = await self.list_models() # Call the existing method
+
+        if not all_models_info:
+            logger.warning("No models returned from OpenRouter list_models.")
+            return [], []
+
+        chat_models = []
+        embedding_models = []
+
+        # Common embedding model identifiers
+        embedding_keywords = ["embed", "embedding", "ada-002"]
+
+        for model_info in all_models_info:
+            model_id = model_info.get("id")
+            if not model_id:
+                continue
+
+            # Check if it's likely an embedding model
+            is_embedding = any(keyword in model_id.lower() for keyword in embedding_keywords)
+
+            if is_embedding:
+                embedding_models.append(model_id)
+            else:
+                # Assume others are potential chat models
+                # We could add more filtering here if needed based on OpenRouter's data
+                chat_models.append(model_id)
+
+        # Ensure uniqueness and sort
+        chat_models = sorted(list(set(chat_models)))
+        embedding_models = sorted(list(set(embedding_models)))
+
+        logger.info(f"Categorized models: {len(chat_models)} chat, {len(embedding_models)} embedding.")
+        logger.debug(f"Sample chat models: {chat_models[:10]}...")
+        logger.debug(f"Sample embedding models: {embedding_models[:10]}...")
+
+        return chat_models, embedding_models
     
     async def list_models(self) -> List[Dict[str, Any]]:
         """
