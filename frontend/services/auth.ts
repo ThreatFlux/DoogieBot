@@ -44,9 +44,20 @@ export const login = async (email: string, password: string, options?: LoginOpti
     
     if (!response.ok) {
       console.error('Login failed with status:', response.status);
-      return { error: `Authentication failed with status ${response.status}` };
+      let errorMessage = `Authentication failed with status ${response.status}`;
+      try {
+        const errorData = await response.json();
+        // FastAPI often returns errors in { "detail": "..." }
+        if (errorData && errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+      } catch (parseError) {
+        // If parsing fails, stick with the status-based message
+        console.error('Could not parse error response body:', parseError);
+      }
+      return { error: errorMessage };
     }
-    
+
     const data = await response.json() as Token;
 
     console.log('Login response data:', data);
