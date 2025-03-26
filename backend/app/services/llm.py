@@ -62,7 +62,29 @@ class LLMService:
         # Embedding configuration
         self.embedding_model = embedding_model or (embedding_config.model if embedding_config else None)
         embedding_provider = embedding_config.provider if embedding_config else None
+        embedding_api_key = embedding_config.api_key if embedding_config else None
+        embedding_base_url = embedding_config.base_url if embedding_config else None
         
+        # Determine correct base URLs to pass based on provider.
+        # Only pass the configured base_url if the provider explicitly requires it (e.g., Ollama).
+        # For others (OpenAI, Anthropic, OpenRouter), pass None to use their default endpoints.
+        
+        # Chat client base URL
+        chat_base_url_to_pass = None
+        if self.provider == 'ollama': # Only pass base_url for Ollama
+            chat_base_url_to_pass = self.base_url
+            logger.info(f"Using configured base_url '{chat_base_url_to_pass}' for Ollama chat client.")
+        else:
+            logger.info(f"Ignoring configured base_url for non-Ollama chat provider '{self.provider}'. Using default.")
+            
+        # Embedding client base URL
+        embedding_base_url_to_pass = None
+        if embedding_provider == 'ollama': # Only pass base_url for Ollama
+            embedding_base_url_to_pass = embedding_base_url
+            logger.info(f"Using configured base_url '{embedding_base_url_to_pass}' for Ollama embedding client.")
+        else:
+            logger.info(f"Ignoring configured base_url for non-Ollama embedding provider '{embedding_provider}'. Using default.")
+            
         # Create LLM clients using separate configurations
         if chat_config and embedding_config:
             client_result = LLMFactory.create_separate_clients(
@@ -70,22 +92,24 @@ class LLMService:
                     'provider': self.provider,
                     'model': self.model,
                     'api_key': self.api_key,
-                    'base_url': self.base_url
+                    'base_url': chat_base_url_to_pass # Use determined URL
                 },
                 embedding_config={
                     'provider': embedding_provider,
                     'model': self.embedding_model,
-                    'api_key': embedding_config.api_key,
-                    'base_url': embedding_config.base_url
+                    'api_key': embedding_api_key, # Use fetched key
+                    'base_url': embedding_base_url_to_pass # Use determined URL
                 }
             )
         else:
             # Fallback to legacy method if either config is missing
+            # Note: create_client's base_url param primarily affects the chat client.
+            # The factory's internal logic handles the embedding base URL based on embedding_provider.
             client_result = LLMFactory.create_client(
                 provider=self.provider,
                 model=self.model,
                 api_key=self.api_key,
-                base_url=self.base_url,
+                base_url=chat_base_url_to_pass, # Use determined URL for chat
                 embedding_model=self.embedding_model,
                 embedding_provider=embedding_provider
             )

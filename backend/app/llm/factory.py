@@ -108,7 +108,20 @@ class LLMFactory:
             base_url = base_url if base_url else settings.OLLAMA_BASE_URL
         elif provider == "openrouter":
             base_url = "https://openrouter.ai/api/v1"
-            
+        elif provider == "openai":
+             # OpenAI client uses default URL unless a specific one is provided
+             # If base_url was incorrectly pulled from another provider's config, reset it.
+             # Allow explicit override if base_url was intentionally passed for OpenAI (e.g., proxy)
+             # We assume if base_url is passed *to this function*, it's intentional for OpenAI.
+             # The issue arises when base_url is *derived* from the wrong DB config in the service layer.
+             # Let's refine: only override if the base_url looks like a known local one.
+             # A better fix might be in the service layer, but let's patch here for now.
+             if base_url and ("localhost" in base_url or "127.0.0.1" in base_url or "ollama" in base_url or "lmstudio" in base_url):
+                 # If a local-looking URL was passed for OpenAI, it's likely wrong. Reset it.
+                 logger.warning(f"Potential incorrect base_url '{base_url}' provided for OpenAI client. Resetting to default.")
+                 base_url = None # Use OpenAI client's default
+             # Otherwise, trust the passed base_url if it exists (e.g. for Azure OpenAI, proxies)
+
         client_class = cls._registry[provider]
         client = client_class(
             model=model,
@@ -185,84 +198,6 @@ class LLMFactory:
                 base_url=base_url
             )
             
-            return (chat_client, embedding_client)
-            
-        except Exception as e:
-            logger.error(f"Error creating LLM client(s): {str(e)}")
-            raise
-            
-        # Convert providers to lowercase for case-insensitive matching
-        provider = provider.lower()
-        embedding_provider = (embedding_provider or provider).lower()
-        
-        # Check if providers are supported
-        if provider not in cls._registry:
-            raise ValueError(f"Unsupported chat LLM provider: {provider}")
-        if embedding_provider not in cls._registry:
-            raise ValueError(f"Unsupported embedding LLM provider: {embedding_provider}")
-        
-        # Get client classes
-        chat_client_class = cls._registry[provider]
-        embedding_client_class = cls._registry[embedding_provider]
-        
-        # Use default models if not provided
-        if not model:
-            model = cls._get_default_model(provider)
-        if not embedding_model:
-            embedding_model = cls._get_default_model(embedding_provider)
-        
-        try:
-            # Set provider-specific base URLs - always use the correct base URL for each provider
-            if provider == "ollama":
-                # Ollama always needs its specific base URL
-                chat_base_url = base_url if base_url else settings.OLLAMA_BASE_URL
-            elif provider == "openai":
-                # OpenAI uses default API URL if not specified
-                chat_base_url = None
-            elif provider == "openrouter":
-                # OpenRouter always uses its specific API URL
-                chat_base_url = "https://openrouter.ai/api/v1"
-            else:
-                # For other providers, use the provided base URL
-                chat_base_url = base_url
-            
-            # Create chat client with provider-specific base URL
-            chat_client = chat_client_class(
-                model=model,
-                api_key=api_key,
-                base_url=chat_base_url
-            )
-            logger.info(f"Created {provider} chat client with model {model} and base URL {chat_base_url}")
-            
-            # If same provider, return single client
-            if provider == embedding_provider:
-                chat_client.embedding_model = embedding_model
-                logger.info(f"Using same client for embeddings with model {embedding_model}")
-                return chat_client
-            
-            # Set provider-specific base URL for embedding client - always use the correct base URL
-            if embedding_provider == "ollama":
-                # For Ollama, use the provided base URL (from the database) or fall back to the default
-                embedding_base_url = base_url if base_url else settings.OLLAMA_BASE_URL
-                logger.info(f"Using Ollama base URL for embeddings: {embedding_base_url}")
-            elif embedding_provider == "openai":
-                # OpenAI uses default API URL if not specified
-                embedding_base_url = None
-            elif embedding_provider == "openrouter":
-                # OpenRouter always uses its specific API URL
-                embedding_base_url = "https://openrouter.ai/api/v1"
-            else:
-                # For other providers, use the provided base URL
-                embedding_base_url = base_url
-            
-            logger.info(f"Creating embedding client with provider {embedding_provider}, model {embedding_model}, and base URL {embedding_base_url}")
-            
-            embedding_client = embedding_client_class(
-                model=embedding_model,
-                api_key=api_key,
-                base_url=embedding_base_url
-            )
-            logger.info(f"Created separate {embedding_provider} embedding client with model {embedding_model}")
             return (chat_client, embedding_client)
             
         except Exception as e:
