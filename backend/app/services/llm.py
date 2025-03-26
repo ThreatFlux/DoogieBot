@@ -359,12 +359,46 @@ class LLMService:
                     model = chunk.get("model", model)
                     provider = chunk.get("provider", provider)
                     logger.debug(f"Stream ended for chat {chat_id}. Finish reason: {finish_reason}")
-                    break # Exit loop after processing end event
+                    logger.debug(f"Stream ended for chat {chat_id}. Finish reason: {finish_reason}")
+
+                    # Save the final message BEFORE yielding the final chunk
+                    logger.debug(f"Saving final message for chat {chat_id} before yielding end chunk.")
+                    ChatService.add_message(
+                        self.db,
+                        chat_id,
+                        "assistant",
+                        full_content, # Save accumulated content
+                        tokens=total_tokens,
+                        tokens_per_second=tokens_per_second,
+                        model=model,
+                        provider=provider,
+                        context_documents=[doc["id"] for doc in context_documents] if context_documents else None,
+                    )
+                    logger.debug(f"Final message saved for chat {chat_id}")
+                    # Yield the final chunk now that saving is done
+                    yield chunk
+                    break # Exit loop after processing and saving end event
+
                 elif chunk_type == "error":
                     error_message = chunk.get("error", "Unknown streaming error")
                     logger.error(f"Error received during stream for chat {chat_id}: {error_message}")
                     error_occurred = True
                     full_content = f"An error occurred: {error_message}" # Set content to error message
+
+                    # Save the error message BEFORE yielding the error chunk
+                    logger.debug(f"Saving error message for chat {chat_id} before yielding error chunk.")
+                    ChatService.add_message(
+                        self.db,
+                        chat_id,
+                        "assistant",
+                        full_content, # Save error message
+                        model=model,
+                        provider=provider,
+                        context_documents=[doc["id"] for doc in context_documents] if context_documents else None,
+                    )
+                    logger.debug(f"Error message saved for chat {chat_id}")
+                    # Yield the error chunk now that saving is done
+                    yield chunk
                     break # Exit loop on error
 
                 # Add a small delay to prevent overwhelming the client, less frequently
@@ -373,21 +407,9 @@ class LLMService:
                 else:
                     await asyncio.sleep(0) # Yield control briefly
 
-            # Save the final message OR error message after the loop finishes
-            logger.debug(f"Saving final message/error for chat {chat_id}. Error occurred: {error_occurred}")
-            ChatService.add_message(
-                self.db,
-                chat_id,
-                "assistant",
-                full_content, # Save accumulated content or error message
-                tokens=total_tokens, # Use total tokens from end event or calculated
-                tokens_per_second=tokens_per_second,
-                model=model,
-                provider=provider,
-                context_documents=[doc["id"] for doc in context_documents] if context_documents else None,
-                # Optionally save finish_reason or error status if schema supports it
-            )
-            logger.debug(f"Final message/error saved for chat {chat_id}")
+            # Message saving is now handled within the loop before yielding final/error chunks
+            # logger.debug(f"Saving final message/error for chat {chat_id}. Error occurred: {error_occurred}")
+            # ChatService.add_message(...) # Removed from here
 
         except asyncio.TimeoutError: # This corresponds to the generate call timeout, less likely now
             logger.error(f"Timeout occurred during initial generation call for chat {chat_id}")
