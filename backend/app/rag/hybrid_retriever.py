@@ -11,6 +11,7 @@ from app.rag.graph_rag import GraphRAG
 from app.rag.singleton import rag_singleton
 from app.services.document import DocumentService
 from app.services.rag_config import RAGConfigService
+from app.services.reranking_config import RerankingConfigService # Added import
 from app.models.document import DocumentChunk
 
 # Set up logging
@@ -251,7 +252,7 @@ class HybridRetriever:
         use_bm25: Optional[bool] = None,
         use_faiss: Optional[bool] = None,
         use_graph: Optional[bool] = None,
-        rerank: bool = True,
+        rerank: Optional[bool] = None, # Changed default to None
         fast_mode: bool = True
     ) -> List[Dict[str, Any]]:
         """
@@ -350,11 +351,16 @@ class HybridRetriever:
             except Exception as e:
                 logger.error(f"Error in graph retrieval: {str(e)}", exc_info=True)
                 # Continue with other results even if graph search fails
+
+        # Determine if reranking should happen based on DB config and parameter override
+        db_rerank_config = RerankingConfigService.get_active_config(self.db)
+        should_rerank = rerank if rerank is not None else (db_rerank_config and db_rerank_config.is_active)
         
         # Rerank results if needed
-        if rerank and all_results:
+        if should_rerank and all_results:
             rerank_start = time.time()
-            
+            logger.info(f"Reranking results (DB active: {db_rerank_config.is_active if db_rerank_config else 'N/A'}, Param override: {rerank})")
+
             # Simple reranking by score
             all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
             

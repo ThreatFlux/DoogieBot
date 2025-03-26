@@ -7,10 +7,7 @@ run_migrations() {
     cd /app/backend
     # Alembic should find alembic.ini in the current directory
     python -m alembic upgrade head
-    
-    # Run the tag tables creation script
-    echo "Creating tag tables..."
-    python create_tag_tables.py
+    # The create_tag_tables.py script is redundant as Alembic handles all table creation.
     
     echo "Database migrations completed."
 }
