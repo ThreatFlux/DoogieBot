@@ -19,7 +19,7 @@ from app.schemas.chat import (
     StreamingResponse as StreamingResponseSchema
 )
 from app.services.chat import ChatService
-from app.services.llm import LLMService
+from app.services.llm_service import LLMService
 from app.utils.deps import get_current_user, get_current_admin_user
 
 router = APIRouter()
