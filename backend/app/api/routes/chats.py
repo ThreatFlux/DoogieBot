@@ -17,11 +17,10 @@ from app.schemas.chat import (
     MessageUpdate,
     FeedbackCreate,
     PaginatedMessageResponse, # Import the new schema
-    StreamingResponse as StreamingResponseSchema
 )
 from app.services.chat import ChatService
 from app.services.llm_service import LLMService
-from app.utils.deps import get_current_user, get_current_admin_user
+# Removed duplicate import: from app.utils.deps import get_current_user, get_current_admin_user
 
 router = APIRouter()
 
@@ -37,7 +36,7 @@ async def get_flagged_chats(
     Get paginated chats with negative feedback. Admin only.
     """
     chats, total = ChatService.get_flagged_chats(db, skip=skip, limit=limit)
-    
+
     # Serialize chats to ensure all required fields are included
     return {
         "items": [
@@ -89,11 +88,11 @@ def read_feedback_messages(
     messages, total = ChatService.get_feedback_messages(
         db, feedback_type, reviewed, skip=skip, limit=limit # Pass skip and limit
     )
-    
+
     # Construct paginated response
     page = skip // limit + 1 if limit > 0 else 1
     pages = (total + limit - 1) // limit if limit > 0 else 1
-    
+
     # Let FastAPI handle serialization using the response_model and from_attributes=True
     return {
         "items": messages, # Return the list of SQLAlchemy Message objects directly
@@ -121,7 +120,7 @@ def update_message(
                 detail="Message not found",
             )
         return message
-    
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="No valid update fields provided",
@@ -151,7 +150,7 @@ def read_chats(
     Retrieve user's chats.
     """
     chats = ChatService.get_user_chats(db, current_user.id, skip=skip, limit=limit)
-    
+
     # Ensure context_documents is properly formatted for each message
     for chat in chats:
         if chat.messages:
@@ -167,7 +166,7 @@ def read_chats(
                     else:
                         # For other non-list formats, convert to empty list
                         message.context_documents = []
-    
+
     return chats
 
 @router.get("/{chat_id}", response_model=ChatResponse)
@@ -185,14 +184,14 @@ def read_chat(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     # Get messages for the chat
     chat.messages = ChatService.get_messages(db, chat_id)
     for message in chat.messages:
@@ -216,14 +215,14 @@ def update_chat(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     # If tags are provided, update them separately
     # This is done first to ensure both the title and tags get updated
     if chat_in.tags is not None:
@@ -234,11 +233,11 @@ def update_chat(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update chat tags",
             )
-    
+
     # Update chat title
     if chat_in.title is not None:
         chat = ChatService.update_chat(db, chat_id, chat_in.title)
-    
+
     # Get the updated chat with associated messages
     chat.messages = ChatService.get_messages(db, chat_id)
     return chat
@@ -258,14 +257,14 @@ def delete_chat(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     result = ChatService.delete_chat(db, chat_id)
     return result
 
@@ -285,14 +284,14 @@ def add_message(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     message = ChatService.add_message(
         db,
         chat_id,
@@ -317,14 +316,14 @@ async def send_to_llm(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     # Add user message to the chat
     ChatService.add_message(
         db,
@@ -332,10 +331,10 @@ async def send_to_llm(
         "user",
         message_in.content
     )
-    
-    # Initialize LLM service
-    llm_service = LLMService(db)
-    
+
+    # Initialize LLM service, passing user_id
+    llm_service = LLMService(db, user_id=current_user.id) # <-- Pass user_id
+
     # Send message to LLM and get response
     response = await llm_service.chat(
         chat_id=chat_id,
@@ -343,7 +342,14 @@ async def send_to_llm(
         use_rag=True,
         stream=False
     )
-    
+
+    # NOTE: Tool calls are now handled directly in the LLM service for non-streaming requests
+    # The service takes care of:
+    # 1. Executing the tools
+    # 2. Sending results back to the LLM
+    # 3. Continuing the conversation until a final content response is received
+    # No additional handling is needed here as that logic is now in LLMService.chat()
+
     # Get the last message (assistant's response)
     messages = ChatService.get_messages(db, chat_id)
     if not messages:
@@ -351,12 +357,15 @@ async def send_to_llm(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get assistant response",
         )
-    
+
     # Return the assistant's message
     for message in reversed(messages):
         if message.role == "assistant":
+            # Ensure context_documents is correctly formatted if needed
+            if message.context_documents is not None and not isinstance(message.context_documents, list):
+                 message.context_documents = [] # Or handle conversion if format is known
             return message
-    
+
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Failed to get assistant response",
@@ -370,16 +379,16 @@ async def stream_from_llm(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """
-    Stream a response from the LLM.
+    Stream a response from the LLM using POST.
     """
     import logging
     from app.core.config import settings
-    
+
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    
+    logger.setLevel(logging.DEBUG if settings.LLM_DEBUG_LOGGING else logging.INFO)
+
     logger.debug(f"POST Stream request received for chat {chat_id}")
-    
+
     chat = ChatService.get_chat(db, chat_id)
     if not chat:
         logger.error(f"Chat {chat_id} not found")
@@ -387,7 +396,7 @@ async def stream_from_llm(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         logger.error(f"User {current_user.id} does not own chat {chat_id}")
@@ -395,7 +404,7 @@ async def stream_from_llm(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     # Add user message to the chat
     ChatService.add_message(
         db,
@@ -403,168 +412,94 @@ async def stream_from_llm(
         "user",
         message_in.content
     )
-    
+
     logger.debug(f"Initializing LLM service for streaming")
-    # Initialize LLM service
-    llm_service = LLMService(db)
-    
-    # Create async generator for streaming response with improved error handling
+    # Initialize LLM service, passing user_id
+    llm_service = LLMService(db, user_id=current_user.id) # <-- Pass user_id
+
+    # Create async generator for streaming response
     async def response_generator():
         import json
         import asyncio
         import logging
         import time
         import traceback
-        
-        logger = logging.getLogger(__name__)
-        
-        # Send a keep-alive message to prevent connection timeouts
+
+        logger = logging.getLogger(__name__) # Use local logger
+
         last_sent_time = time.time()
         keep_alive_interval = 15  # seconds
-        
+
         try:
             logger.debug(f"Starting chat stream for chat {chat_id}")
-            
+
             # Send an initial message to establish the connection
-            initial_chunk = {
-                "content": "",
-                "status": "processing",
-                "done": False
-            }
+            initial_chunk = {"content": "", "status": "processing", "done": False}
             yield f"data: {json.dumps(initial_chunk)}\n\n"
-            
-            # Get the chat stream from the LLM service with a timeout wrapper
+
+            # Get the chat stream from the LLM service
             try:
-                # Use a timeout for the entire streaming operation
-                chat_stream = await asyncio.wait_for(
-                    llm_service.chat(
-                        chat_id=chat_id,
-                        user_message=message_in.content,
-                        use_rag=True,
-                        stream=True
-                    ),
-                    timeout=30  # 30 second timeout for getting the initial stream
+                chat_stream = llm_service.chat( # No need for wait_for here, handled in service
+                    chat_id=chat_id,
+                    user_message=message_in.content,
+                    use_rag=True,
+                    stream=True
                 )
-                
-                # Stream chunks to the client with error handling
+
                 chunk_count = 0
-                try:
-                    async for chunk in chat_stream:
-                        chunk_count += 1
-                        current_time = time.time()
-                        
-                        # Log only occasionally to reduce overhead
-                        if chunk_count % 10 == 0 or chunk.get("done", False):
-                            logger.debug(f"Streaming chunk {chunk_count}: {chunk.get('content', '')[:30]}... (done: {chunk.get('done', False)})")
-                        
-                        # Convert chunk to JSON string and format as SSE
-                        try:
-                            yield f"data: {json.dumps(chunk)}\n\n"
-                            last_sent_time = current_time
-                        except Exception as json_error:
-                            logger.error(f"Error serializing chunk {chunk_count}: {str(json_error)}")
-                            # Continue with next chunk instead of failing
-                            continue
-                        
-                        # Use a minimal delay only when necessary
-                        if chunk_count % 20 == 0 and not chunk.get("done", False):
-                            # Very minimal delay every 20 chunks
-                            await asyncio.sleep(0.005)  # 5ms delay
-                        else:
-                            # Just yield to event loop without actual delay
-                            await asyncio.sleep(0)
-                        
-                        # Send keep-alive messages if needed
-                        if current_time - last_sent_time > keep_alive_interval and not chunk.get("done", False):
-                            keep_alive_chunk = {
-                                "content": chunk.get("content", ""),
-                                "status": "processing",
-                                "done": False
-                            }
-                            yield f"data: {json.dumps(keep_alive_chunk)}\n\n"
-                            last_sent_time = current_time
-                    
-                    logger.debug(f"Finished streaming {chunk_count} chunks for chat {chat_id}")
-                    
-                    # Send a final done message if we didn't get one from the stream
-                    if chunk_count == 0 or not chunk.get("done", False):
-                        final_chunk = {
-                            "content": "Response complete.",
-                            "done": True
-                        }
-                        yield f"data: {json.dumps(final_chunk)}\n\n"
-                except Exception as stream_loop_error:
-                    # Handle errors in the streaming loop
-                    logger.exception(f"Error in streaming loop for chat {chat_id}: {str(stream_loop_error)}")
-                    error_chunk = {
-                        "content": f"An error occurred during streaming: {str(stream_loop_error)}",
-                        "error": True,
-                        "done": True
-                    }
-                    yield f"data: {json.dumps(error_chunk)}\n\n"
-                    
-                    # Add error message to chat
-                    ChatService.add_message(
-                        db,
-                        chat_id,
-                        "assistant",
-                        f"An error occurred during streaming: {str(stream_loop_error)}",
-                        context_documents={"error": str(stream_loop_error)}
-                    )
-            except asyncio.TimeoutError:
-                logger.error(f"Timeout getting initial stream for chat {chat_id}")
-                error_chunk = {
-                    "content": "The response took too long to start. This might be due to high server load or complexity of the query with RAG processing.",
-                    "error": True,
-                    "done": True
-                }
+                async for chunk in chat_stream:
+                    chunk_count += 1
+                    current_time = time.time()
+
+                    if chunk_count % 10 == 0 or chunk.get("done", False):
+                        logger.debug(f"Streaming chunk {chunk_count}: {chunk.get('content', '')[:30]}... (done: {chunk.get('done', False)})")
+
+                    # Handle tool calls in stream
+                    if 'tool_calls_delta' in chunk or 'tool_calls' in chunk:
+                        # Just forward the chunk as-is - frontend will handle visualization
+                        # The chunk format follows the OpenAI API format for tool calls
+                        logger.debug(f"Tool call chunk detected: {json.dumps(chunk)[:100]}...")
+                        # We don't need special processing - the chunk already contains the necessary data
+
+                    try:
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                        last_sent_time = current_time
+                    except Exception as json_error:
+                        logger.error(f"Error serializing chunk {chunk_count}: {str(json_error)}")
+                        continue
+
+                    # Minimal delay
+                    await asyncio.sleep(0.001) # Reduced delay
+
+                    # Keep-alive logic (simplified)
+                    if current_time - last_sent_time > keep_alive_interval and not chunk.get("done", False):
+                         yield ": keep-alive\n\n" # Simple SSE comment for keep-alive
+                         last_sent_time = current_time
+
+                logger.debug(f"Finished streaming {chunk_count} chunks for chat {chat_id}")
+
+                # Ensure a final 'done' message if stream ends unexpectedly
+                if chunk_count == 0 or not chunk.get("done", False):
+                     final_chunk = {"content": "Response processing finished.", "done": True}
+                     yield f"data: {json.dumps(final_chunk)}\n\n"
+
+            except asyncio.TimeoutError: # Catch timeout from underlying client if applicable
+                logger.error(f"Timeout during LLM interaction for chat {chat_id}")
+                error_chunk = {"content": "The request timed out.", "error": True, "done": True}
                 yield f"data: {json.dumps(error_chunk)}\n\n"
-                
-                # Add error message to chat
-                ChatService.add_message(
-                    db,
-                    chat_id,
-                    "assistant",
-                    "The response took too long to start. This might be due to high server load or complexity of the query with RAG processing.",
-                    context_documents={"error": "timeout_getting_stream"}
-                )
+                ChatService.add_message(db, chat_id, "assistant", "Error: Request timed out.", context_documents={"error": "timeout"})
             except Exception as chat_error:
                 logger.exception(f"Error getting chat stream for chat {chat_id}: {str(chat_error)}")
-                error_chunk = {
-                    "content": f"An error occurred while preparing the response: {str(chat_error)}",
-                    "error": True,
-                    "done": True
-                }
+                error_chunk = {"content": f"An error occurred: {str(chat_error)}", "error": True, "done": True}
                 yield f"data: {json.dumps(error_chunk)}\n\n"
-                
-                # Add error message to chat
-                ChatService.add_message(
-                    db,
-                    chat_id,
-                    "assistant",
-                    f"An error occurred while preparing the response: {str(chat_error)}",
-                    context_documents={"error": str(chat_error)}
-                )
-            
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout in streaming response for chat {chat_id}")
-            error_chunk = {
-                "content": "The response took too long to generate. This might be due to high server load or complexity of the query with RAG processing.",
-                "error": True,
-                "done": True
-            }
-            yield f"data: {json.dumps(error_chunk)}\n\n"
-            
+                ChatService.add_message(db, chat_id, "assistant", f"Error: {str(chat_error)}", context_documents={"error": str(chat_error)})
+
         except Exception as e:
-            logger.exception(f"Error in streaming response: {str(e)}\n{traceback.format_exc()}")
-            # Send error message to client
-            error_chunk = {
-                "content": f"An error occurred: {str(e)}",
-                "error": True,
-                "done": True
-            }
+            logger.exception(f"Outer error in streaming response generator: {str(e)}\n{traceback.format_exc()}")
+            error_chunk = {"content": f"An unexpected error occurred: {str(e)}", "error": True, "done": True}
             yield f"data: {json.dumps(error_chunk)}\n\n"
-    
+
+
     logger.debug(f"Returning StreamingResponse for chat {chat_id}")
     return StreamingResponse(
         response_generator(),
@@ -573,30 +508,38 @@ async def stream_from_llm(
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "Content-Type": "text/event-stream",
-            "X-Accel-Buffering": "no",  # Important for nginx proxying
+            "X-Accel-Buffering": "no",
             "Transfer-Encoding": "chunked"
         }
     )
 
+
+# GET endpoint for EventSource compatibility
 @router.get("/{chat_id}/stream")
 async def stream_from_llm_get(
-    request: Request,
+    request: Request, # Use Request object to get query params
     chat_id: str,
-    content: str,
+    # content: str, # Content will be a query parameter
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_stream),
+    current_user: User = Depends(get_current_user_stream), # Use stream-compatible auth
 ) -> StreamingResponse:
     """
     Stream a response from the LLM using GET (for EventSource).
     """
     import logging
     from app.core.config import settings
-    
+
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    
-    logger.debug(f"Stream request received for chat {chat_id} with content: {content[:50]}...")
-    
+    logger.setLevel(logging.DEBUG if settings.LLM_DEBUG_LOGGING else logging.INFO)
+
+    # Get content from query parameters
+    content = request.query_params.get("content")
+    if not content:
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing 'content' query parameter")
+
+
+    logger.debug(f"GET Stream request received for chat {chat_id} with content: {content[:50]}...")
+
     chat = ChatService.get_chat(db, chat_id)
     if not chat:
         logger.error(f"Chat {chat_id} not found")
@@ -604,7 +547,7 @@ async def stream_from_llm_get(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         logger.error(f"User {current_user.id} does not own chat {chat_id}")
@@ -612,178 +555,100 @@ async def stream_from_llm_get(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     # Add user message to the chat
     ChatService.add_message(
         db,
         chat_id,
         "user",
-        content
+        content # Use content from query param
     )
-    
+
     logger.debug(f"Initializing LLM service for streaming")
-    # Initialize LLM service
-    llm_service = LLMService(db)
-    
-    # Create async generator for streaming response with improved error handling
+    # Initialize LLM service, passing user_id
+    llm_service = LLMService(db, user_id=current_user.id) # <-- Pass user_id
+
+    # Create async generator (same logic as POST endpoint)
     async def response_generator():
         import json
         import asyncio
         import logging
         import time
         import traceback
-        
-        logger = logging.getLogger(__name__)
-        
-        # Send a keep-alive message to prevent connection timeouts
+
+        logger = logging.getLogger(__name__) # Use local logger
+
         last_sent_time = time.time()
         keep_alive_interval = 15  # seconds
-        
+
         try:
             logger.debug(f"Starting chat stream for chat {chat_id}")
-            
+
             # Send an initial message to establish the connection
-            initial_chunk = {
-                "content": "",
-                "status": "processing",
-                "done": False
-            }
+            initial_chunk = {"content": "", "status": "processing", "done": False}
             yield f"data: {json.dumps(initial_chunk)}\n\n"
-            
-            # Get the chat stream from the LLM service with a timeout wrapper
+
+            # Get the chat stream from the LLM service
             try:
-                # Use a timeout for the entire streaming operation
-                chat_stream = await asyncio.wait_for(
-                    llm_service.chat(
-                        chat_id=chat_id,
-                        user_message=content,
-                        use_rag=True,
-                        stream=True
-                    ),
-                    timeout=30  # 30 second timeout for getting the initial stream
+                chat_stream = llm_service.chat( # No need for wait_for here
+                    chat_id=chat_id,
+                    user_message=content, # Use content from query param
+                    use_rag=True,
+                    stream=True
                 )
-                
-                # Stream chunks to the client with error handling
+
                 chunk_count = 0
-                try:
-                    async for chunk in chat_stream:
-                        chunk_count += 1
-                        current_time = time.time()
-                        
-                        # Log only occasionally to reduce overhead
-                        if chunk_count % 10 == 0 or chunk.get("done", False):
-                            logger.debug(f"Streaming chunk {chunk_count}: {chunk.get('content', '')[:30]}... (done: {chunk.get('done', False)})")
-                        
-                        # Convert chunk to JSON string and format as SSE
-                        try:
-                            yield f"data: {json.dumps(chunk)}\n\n"
-                            last_sent_time = current_time
-                        except Exception as json_error:
-                            logger.error(f"Error serializing chunk {chunk_count}: {str(json_error)}")
-                            # Continue with next chunk instead of failing
-                            continue
-                        
-                        # Use a minimal delay only when necessary
-                        # This helps ensure the client can process chunks properly
-                        # without overwhelming it or causing browser buffering issues
-                        if chunk_count % 20 == 0 and not chunk.get("done", False):
-                            # Very minimal delay every 20 chunks
-                            await asyncio.sleep(0.005)  # 5ms delay
-                        else:
-                            # Just yield to event loop without actual delay
-                            await asyncio.sleep(0)
-                        
-                        # Send keep-alive messages if needed
-                        if current_time - last_sent_time > keep_alive_interval and not chunk.get("done", False):
-                            keep_alive_chunk = {
-                                "content": chunk.get("content", ""),
-                                "status": "processing",
-                                "done": False
-                            }
-                            yield f"data: {json.dumps(keep_alive_chunk)}\n\n"
-                            last_sent_time = current_time
-                    
-                    logger.debug(f"Finished streaming {chunk_count} chunks for chat {chat_id}")
-                    
-                    # Send a final done message if we didn't get one from the stream
-                    if chunk_count == 0 or not chunk.get("done", False):
-                        final_chunk = {
-                            "content": "Response complete.",
-                            "done": True
-                        }
-                        yield f"data: {json.dumps(final_chunk)}\n\n"
-                except Exception as stream_loop_error:
-                    # Handle errors in the streaming loop
-                    logger.exception(f"Error in streaming loop for chat {chat_id}: {str(stream_loop_error)}")
-                    error_chunk = {
-                        "content": f"An error occurred during streaming: {str(stream_loop_error)}",
-                        "error": True,
-                        "done": True
-                    }
-                    yield f"data: {json.dumps(error_chunk)}\n\n"
-                    
-                    # Add error message to chat
-                    ChatService.add_message(
-                        db,
-                        chat_id,
-                        "assistant",
-                        f"An error occurred during streaming: {str(stream_loop_error)}",
-                        context_documents={"error": str(stream_loop_error)}
-                    )
+                async for chunk in chat_stream:
+                    chunk_count += 1
+                    current_time = time.time()
+
+                    if chunk_count % 10 == 0 or chunk.get("done", False):
+                        logger.debug(f"Streaming chunk {chunk_count}: {chunk.get('content', '')[:30]}... (done: {chunk.get('done', False)})")
+
+                    # Handle tool calls in stream
+                    if 'tool_calls_delta' in chunk or 'tool_calls' in chunk:
+                        # Just forward the chunk as-is - frontend will handle visualization
+                        logger.debug(f"Tool call chunk detected in GET stream: {json.dumps(chunk)[:100]}...")
+
+                    try:
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                        last_sent_time = current_time
+                    except Exception as json_error:
+                        logger.error(f"Error serializing chunk {chunk_count}: {str(json_error)}")
+                        continue
+
+                    # Minimal delay
+                    await asyncio.sleep(0.001)
+
+                    # Keep-alive logic
+                    if current_time - last_sent_time > keep_alive_interval and not chunk.get("done", False):
+                         yield ": keep-alive\n\n"
+                         last_sent_time = current_time
+
+                logger.debug(f"Finished streaming {chunk_count} chunks for chat {chat_id}")
+
+                # Ensure a final 'done' message if stream ends unexpectedly
+                if chunk_count == 0 or not chunk.get("done", False):
+                     final_chunk = {"content": "Response processing finished.", "done": True}
+                     yield f"data: {json.dumps(final_chunk)}\n\n"
+
             except asyncio.TimeoutError:
-                logger.error(f"Timeout getting initial stream for chat {chat_id}")
-                error_chunk = {
-                    "content": "The response took too long to start. This might be due to high server load or complexity of the query with RAG processing.",
-                    "error": True,
-                    "done": True
-                }
+                logger.error(f"Timeout during LLM interaction for chat {chat_id}")
+                error_chunk = {"content": "The request timed out.", "error": True, "done": True}
                 yield f"data: {json.dumps(error_chunk)}\n\n"
-                
-                # Add error message to chat
-                ChatService.add_message(
-                    db,
-                    chat_id,
-                    "assistant",
-                    "The response took too long to start. This might be due to high server load or complexity of the query with RAG processing.",
-                    context_documents={"error": "timeout_getting_stream"}
-                )
+                ChatService.add_message(db, chat_id, "assistant", "Error: Request timed out.", context_documents={"error": "timeout"})
             except Exception as chat_error:
                 logger.exception(f"Error getting chat stream for chat {chat_id}: {str(chat_error)}")
-                error_chunk = {
-                    "content": f"An error occurred while preparing the response: {str(chat_error)}",
-                    "error": True,
-                    "done": True
-                }
+                error_chunk = {"content": f"An error occurred: {str(chat_error)}", "error": True, "done": True}
                 yield f"data: {json.dumps(error_chunk)}\n\n"
-                
-                # Add error message to chat
-                ChatService.add_message(
-                    db,
-                    chat_id,
-                    "assistant",
-                    f"An error occurred while preparing the response: {str(chat_error)}",
-                    context_documents={"error": str(chat_error)}
-                )
-            
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout in streaming response for chat {chat_id}")
-            error_chunk = {
-                "content": "The response took too long to generate. This might be due to high server load or complexity of the query with RAG processing.",
-                "error": True,
-                "done": True
-            }
-            yield f"data: {json.dumps(error_chunk)}\n\n"
-            
+                ChatService.add_message(db, chat_id, "assistant", f"Error: {str(chat_error)}", context_documents={"error": str(chat_error)})
+
         except Exception as e:
-            logger.exception(f"Error in streaming response: {str(e)}\n{traceback.format_exc()}")
-            # Send error message to client
-            error_chunk = {
-                "content": f"An error occurred: {str(e)}",
-                "error": True,
-                "done": True
-            }
+            logger.exception(f"Outer error in streaming response generator: {str(e)}\n{traceback.format_exc()}")
+            error_chunk = {"content": f"An unexpected error occurred: {str(e)}", "error": True, "done": True}
             yield f"data: {json.dumps(error_chunk)}\n\n"
-    
+
+
     logger.debug(f"Returning StreamingResponse for chat {chat_id}")
     return StreamingResponse(
         response_generator(),
@@ -792,10 +657,11 @@ async def stream_from_llm_get(
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "Content-Type": "text/event-stream",
-            "X-Accel-Buffering": "no",  # Important for nginx proxying
+            "X-Accel-Buffering": "no",
             "Transfer-Encoding": "chunked"
         }
     )
+
 
 @router.get("/{chat_id}/messages", response_model=List[MessageResponse])
 def read_messages(
@@ -812,14 +678,14 @@ def read_messages(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     messages = ChatService.get_messages(db, chat_id)
     return messages
 
@@ -840,25 +706,25 @@ def add_feedback(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    
+
     # Check if user owns the chat
     if chat.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    
+
     message = ChatService.add_feedback(
-        db, 
-        message_id, 
-        feedback_in.feedback, 
+        db,
+        message_id,
+        feedback_in.feedback,
         feedback_in.feedback_text
     )
-    
+
     if not message:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Message not found",
         )
-    
+
     return message

@@ -81,7 +81,7 @@ const customDraculaStyle = {
 import { Message } from '@/types';
 import { parseThinkTags } from '@/utils/thinkTagParser';
 import { FeedbackType } from '@/components/chat/FeedbackButton'; // Import FeedbackType
-import Tooltip from '@/components/ui/Tooltip';
+import Tooltip from '@/components/ui/CustomTooltip';
 import { useNotification } from '@/contexts/NotificationContext';
 import DocumentReferences from '@/components/chat/DocumentReferences';
 import MarkdownEditor from '@/components/chat/MarkdownEditor';

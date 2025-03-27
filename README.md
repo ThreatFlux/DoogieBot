@@ -1,89 +1,83 @@
-# DoogieBot
+# Doogie Chat Bot
 
-This project is a chatbot application built with Next.js (frontend) and FastAPI (backend). It allows users to interact with documents and a Large Language Model (LLM). The project initially focused on addressing markdown formatting issues in chatbot responses but has evolved into a full-fledged application.
+A chat bot application with a Hybrid RAG (BM25 + FAISS) and GraphRAG system, using external LLM services.
 
-## Project Overview
-This application provides a user interface for:
-- Managing documents (uploading, processing, and retrieving)
-- Configuring LLM settings
-- Interacting with an LLM through a chat interface
-- Managing user accounts
+## Features
 
-## Technology Stack
+- Hybrid RAG (BM25 + FAISS) for efficient document retrieval
+- GraphRAG for relationship-aware retrieval
+- Multi-user capabilities
+- Admin dashboard
+- Support for multiple LLM providers
+- Document processing
 
-- **Frontend:** Next.js, React, Tailwind CSS
-- **Backend:** FastAPI, Python
-- **Database:** (Inferred from migrations - likely PostgreSQL or similar)
-- **LLM Integration:** Supports multiple LLMs (OpenAI, Anthropic, Ollama, etc.)
-- **Vector Database:** (Inferred from code - likely FAISS)
-- **Deployment:** Docker, Docker Compose
+## Requirements
 
-## Production Setup (Docker Compose)
+- Python 3.12+
+- Node.js 20.x
+- pnpm
 
-The production setup uses Docker Compose to run the application in a containerized environment.
+## Quick Start
 
-**`docker-compose.prod.yml` Configuration:**
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/doogie-chat.git
+   cd doogie-chat
+   ```
 
--   Defines a single service named `app`.
--   Builds the application from the root `Dockerfile`.
--   Exposes ports 3000 (frontend) and 8000 (backend).
--   Uses bind mounts for the application code:
-    -   `./:/app`: Mounts the entire project directory.
-    -   Excludes build artifacts and dependencies: `/app/frontend/.next`, `/app/frontend/node_modules`, `/app/backend/__pycache__`.
--   Sets environment variables:
-    -   `NODE_ENV=production`
-    -   `PYTHONPATH=/app`
-    -   `FASTAPI_ENV=production`
-    -   Database connection settings (if applicable)
-    -   LLM service API keys (OpenAI, Anthropic, etc.)
-    -   Secret key and other security-related settings.
--   Uses `/app/entrypoint.prod.sh` as the entrypoint.
--   Restarts the service unless stopped (`restart: unless-stopped`).
+2. Create a `.env` file based on the example:
+   ```bash
+   cp .env.example .env
+   ```
 
-**`entrypoint.prod.sh` Script:**
+3. Update the `.env` file with your LLM API keys and other configuration.
 
--   Installs backend and frontend dependencies.
--   Runs database migrations using Alembic.
--   Builds the frontend for production (`npm run build`).
--   Starts the backend server using Uvicorn:
-    -   `uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 300`
--   Starts the frontend server using `npm run start`.
--   Handles shutdown signals (SIGTERM, SIGINT) to gracefully stop the services.
+4. Start the application with Docker:
+   ```bash
+   make docker-up
+   ```
 
-**Running in Production:**
+   Or for production mode:
+   ```bash
+   make docker-up-prod
+   ```
 
-1.  Set the necessary environment variables in a `.env` file or directly in your shell. You'll need to provide API keys for the LLM services you want to use and a strong `SECRET_KEY`.
-2.  Run `docker compose -f docker-compose.prod.yml up --build` to build and start the application.
+5. Access the application at http://localhost:3000
 
-## Development Setup
+## Development
 
-1.  Clone the repository: `git clone <repository_url>`
-2.  Navigate to the project directory: `cd doogie6`
-3.  Install backend dependencies:
-    ```bash
-    cd backend
-    pip install -r requirements.txt
-    ```
-4.  Install frontend dependencies:
-    ```bash
-    cd ../frontend
-    npm install
-    ```
-5.  Run database migrations:
-    ```bash
-    cd ../backend
-    python -m alembic upgrade head
-    ```
-6.  Start the development servers:
-    - You can use the `docker-compose.yml` file for a combined development environment. This will automatically rebuild and reload on code changes.
-    - Run `docker compose up --build`
+### Directory Structure
 
-## Memory Bank
-This project utilizes a memory bank system to maintain context and documentation across sessions. The memory bank consists of Markdown files located in the `memory-bank/` directory. These files contain information about the project's goals, architecture, context, and progress. Key files include:
+- `backend/` - FastAPI backend
+- `frontend/` - Next.js frontend
+- `data/` - Persistent data storage
+  - `data/db/` - SQLite database files
+  - `data/indexes/` - RAG index files
 
-- `projectbrief.md`: Defines the core requirements and goals of the project.
-- `productContext.md`: Explains the purpose and functionality of the application.
-- `activeContext.md`: Tracks the current focus, recent changes, and next steps.
-- `systemPatterns.md`: Describes the system architecture and design patterns.
-- `techContext.md`: Lists the technologies used and development setup.
-- `progress.md`: Summarizes the current status and known issues.
+### Common Commands
+
+- `make all` - Install dependencies, run linters, and tests
+- `make clean` - Clean up build artifacts, caches, and virtual environment
+- `make install` - Install backend and frontend dependencies
+- `make dev` - Start development environment with Docker
+- `make docker-build` - Build Docker image
+- `make test` - Run tests locally
+- `make docker-test` - Run tests in Docker container
+- `make lint` - Run linters locally
+- `make docker-lint` - Run linters in Docker container
+- `make docker-security` - Run security checks in Docker container
+- `make generate-docs` - Generate project documentation
+
+## Configuration
+
+- Backend configuration is in `backend/app/core/config.py`
+- Environment variables are defined in the `.env` file
+- For LLM providers, set the API keys in the `.env` file or in the admin dashboard
+
+## Security
+
+Run `make docker-security` to perform security checks.
+
+## License
+
+See the [LICENSE](LICENSE) file for details.

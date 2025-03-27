@@ -5,7 +5,7 @@ all: install lint test
 
 # Python settings
 UV = uv
-PYTHON_VERSION = 3.12
+PYTHON_VERSION = 3.13
 VENV = .venv
 UV_RUN = $(UV) run
 
@@ -20,7 +20,7 @@ BACKEND_SECURITY_CHECK = $(UV_RUN) bandit
 IMAGE_NAME = doogie-chat
 CONTAINER_NAME = doogie-chat-container
 DOCKER_COMPOSE = docker compose
-BUILD_ENV = 
+BUILD_ENV =
 
 # Version management
 VERSION = $(shell grep -m 1 version backend/pyproject.toml | cut -d'"' -f2)
@@ -111,16 +111,16 @@ sync:
 install:
 	@echo "${YELLOW}Setting up virtual environment...${NC}"
 	$(UV) venv --python $(PYTHON_VERSION)
-	
+
 	@echo "${YELLOW}Installing backend dependencies...${NC}"
 	cd backend && $(UV) pip install -e .
 	cd backend && $(UV) pip install -e ".[dev]"
-	
-	@echo "${YELLOW}Installing frontend dependencies...${NC}"
-	cd frontend && npm install
-	
-	@echo "${GREEN}Installation complete.${NC}"
 
+
+	@echo "${YELLOW}Installing frontend dependencies...${NC}"
+	cd frontend && pnpm install
+
+	@echo "${GREEN}Installation complete.${NC}"
 # Docker builds
 docker-build:
 	@echo "${YELLOW}Building Docker image...${NC}"
@@ -128,7 +128,7 @@ docker-build:
 	@echo "${GREEN}Docker build complete.${NC}"
 
 # Start development environment
-dev: docker-up
+dev: clean docker-up # Added clean target
 
 # Start Docker in development mode
 docker-up:
@@ -159,7 +159,7 @@ lint:
 # Linting (Docker)
 docker-lint:
 	@echo "${YELLOW}Running backend linters in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pylint app --disable=C0111"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pylint app --disable=C0111,R0801"
 	@echo "${YELLOW}Running frontend linters in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm run lint"
 	@echo "${GREEN}Linting complete.${NC}"
@@ -195,7 +195,7 @@ test:
 # Testing (Docker)
 docker-test:
 	@echo "${YELLOW}Running tests in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pytest"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && source /app/.venv/bin/activate && uv pip install -e . && uv pip install pytest pytest-cov && python -m pytest"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm test"
 	@echo "${GREEN}Tests complete.${NC}"
 
@@ -216,7 +216,7 @@ docker-security:
 # Run database migrations
 migrate:
 	@echo "${YELLOW}Running database migrations...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && python -m alembic upgrade head"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run alembic upgrade head" # Changed command
 	@echo "${GREEN}Migrations complete.${NC}"
 
 # Build frontend for production

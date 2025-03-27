@@ -4,6 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile
       target: development  # Use the development stage for local development
+      args: # Add build arguments
+        USER_ID: 501 # This will still be used for file ownership in the build
+        GROUP_ID: 20 # This will still be used for file ownership in the build
+        # DOCKER_GID: <We don't need this anymore>
+    # user: "501:20" # Removed: Run as default user (root)
     ports:
       - "3000:3000"  # Frontend
       - "8000:8000"  # Backend API
@@ -11,10 +16,15 @@ services:
       # Use more specific bind mounts for development
       - ./backend:/app/backend  # Bind mount for backend development
       - ./frontend:/app/frontend  # Bind mount for frontend development
+      - /var/run/docker.sock:/var/run/docker.sock  # Mount Docker socket for Docker-in-Docker (MCP servers)
+      - ./data/db:/app/backend/db  # Persist database files
+      - ./data/indexes:/app/backend/indexes  # Persist index files
       # Exclude node_modules and build artifacts from host machine
       #- /app/frontend/node_modules
       #- /app/frontend/.next
       #- /app/backend/__pycache__
+    # group_add: # Removed
+    #   - "20" # Use the GID directly, as 'staff' might not exist initially in the container
     environment:
       - NODE_ENV=development
       - PYTHONPATH=/app
@@ -35,6 +45,10 @@ services:
       # Memory management
       - PYTHONMALLOC=debug
       - PYTHONWARNINGS=always
+      # MCP configuration
+      - MCP_NETWORK=mcp-network
+      - MCP_DATA_DIR=/var/lib/doogie-chat/mcp
+      - MCP_ENABLE_DOCKER=true
     restart: unless-stopped
     entrypoint: ["/app/entrypoint.sh"]
     # Add memory limits to prevent OOM issues

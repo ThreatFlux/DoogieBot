@@ -65,121 +65,125 @@ const LLMConfiguration: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    
-    try {
-      // Load providers
-      const providersResponse = await getLLMProviders();
-      if (providersResponse.error) {
-        throw new Error(providersResponse.error);
-      }
-      
-      const providersData = providersResponse.providers || {};
-      setProviders(providersData);
-      
-      // Load chat configurations
-      const chatConfigsResponse = await getAllLLMConfigs();
-      if (chatConfigsResponse.error) {
-        throw new Error(chatConfigsResponse.error);
-      }
-      
-      const chatConfigsData = chatConfigsResponse.configs || [];
-      setChatConfigs(chatConfigsData);
-      
-      // Load embedding configurations
-      const embeddingConfigsResponse = await getAllEmbeddingConfigs();
-      if (embeddingConfigsResponse.error) {
-        throw new Error(embeddingConfigsResponse.error);
-      }
-      
-      const embeddingConfigsData = embeddingConfigsResponse.configs || [];
-      setEmbeddingConfigs(embeddingConfigsData);
-      
-      // Load reranking configurations
-      const rerankingConfigsResponse = await getAllRerankingConfigs();
-      if (rerankingConfigsResponse.error) {
-        throw new Error(rerankingConfigsResponse.error);
-      }
-      
-      const rerankingConfigsData = rerankingConfigsResponse.configs || [];
-      setRerankingConfigs(rerankingConfigsData);
 
-      // Set active configs
-      const activeChatConfig = chatConfigsData.find((c: any) => c.is_active);
-      setActiveChatConfig(activeChatConfig || null);
-      
-      const activeEmbeddingConfig = embeddingConfigsData.find((c: any) => c.is_active);
-      setActiveEmbeddingConfig(activeEmbeddingConfig || null);
-      
-      const activeRerankingConfig = rerankingConfigsData.find((c: any) => c.is_active);
-      setActiveRerankingConfig(activeRerankingConfig || null);
-
-      // Initialize provider configs
-      const initialProviderConfigs = Object.entries(providersData).map(([id, info]: [string, any]) => {
-        // Find matching chat config
-        const chatConfig = chatConfigsData.find((c: any) => c.chat_provider === id);
-        // Find matching embedding config
-        const embeddingConfig = embeddingConfigsData.find((c: any) => c.provider === id);
-        
-        // Only set base URL for providers that need it
-        let baseUrl = '';
-        if (id === 'ollama') {
-          // Ollama requires a base URL
-          baseUrl = chatConfig?.base_url || embeddingConfig?.base_url || 'http://localhost:11434';
-        } else if (id === 'openrouter') {
-          // OpenRouter has a fixed base URL that should not be changed
-          baseUrl = 'https://openrouter.ai/api';
-        } else {
-          // Other providers like OpenAI don't need a base URL
-          baseUrl = '';
-        }
-        
-        return {
-          id,
-          chatConfig: chatConfig || null,
-          embeddingConfig: embeddingConfig || null,
-          enabled: (chatConfig?.is_active || embeddingConfig?.is_active) || false,
-          api_key: chatConfig?.api_key || embeddingConfig?.api_key || '',
-          base_url: baseUrl,
-          model: chatConfig?.model || info.default_model || '',
-          embedding_model: embeddingConfig?.model || '',
-          embedding_provider: embeddingConfig?.provider || id,
-          system_prompt: chatConfig?.system_prompt || 'You are Doogie, a helpful AI assistant.',
-          available_models: [],
-          embedding_models: [],
-          isPolling: false
-        };
-      });
-
-      setProviderConfigs(initialProviderConfigs);
-      
-      // Update systemPrompt state with the active chat configuration's system prompt
-      if (activeChatConfig) {
-        if (activeChatConfig.system_prompt) {
-          setSystemPrompt(activeChatConfig.system_prompt);
-        }
-        
-        // Set the selected chat provider and model based on active config
-        setSelectedChatProvider(activeChatConfig.chat_provider);
-        setSelectedChatModel(activeChatConfig.model);
-        
-        // Get reranking info from config
-        const rerankingProvider = activeChatConfig.config?.reranking_provider || '';
-        const rerankingModel = activeChatConfig.config?.reranking_model || '';
-        setSelectedRerankingProvider(rerankingProvider);
-        setSelectedRerankingModel(rerankingModel);
-      }
-      
-      // Set the selected embedding provider and model based on active embedding config
-      if (activeEmbeddingConfig) {
-        setSelectedEmbeddingProvider(activeEmbeddingConfig.provider);
-        setSelectedEmbeddingModel(activeEmbeddingConfig.model);
-      }
-    } catch (err) {
-      console.error('Failed to load LLM data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load LLM data');
-    } finally {
+    // Load providers
+    const providersResponse = await getLLMProviders();
+    if (providersResponse.error) {
+      console.error('API Error loading providers:', providersResponse.error);
+      setError(`Failed to load providers: ${providersResponse.error}`);
       setLoading(false);
+      return;
     }
+    const providersData = providersResponse.providers || {};
+    setProviders(providersData);
+
+    // Load chat configurations
+    const chatConfigsResponse = await getAllLLMConfigs();
+    if (chatConfigsResponse.error) {
+      console.error('API Error loading chat configs:', chatConfigsResponse.error);
+      setError(`Failed to load chat configurations: ${chatConfigsResponse.error}`);
+      setLoading(false);
+      return;
+    }
+    const chatConfigsData = chatConfigsResponse.configs || [];
+    setChatConfigs(chatConfigsData);
+
+    // Load embedding configurations
+    const embeddingConfigsResponse = await getAllEmbeddingConfigs();
+    if (embeddingConfigsResponse.error) {
+      console.error('API Error loading embedding configs:', embeddingConfigsResponse.error);
+      setError(`Failed to load embedding configurations: ${embeddingConfigsResponse.error}`);
+      setLoading(false);
+      return;
+    }
+    const embeddingConfigsData = embeddingConfigsResponse.configs || [];
+    setEmbeddingConfigs(embeddingConfigsData);
+
+    // Load reranking configurations
+    const rerankingConfigsResponse = await getAllRerankingConfigs();
+    if (rerankingConfigsResponse.error) {
+      console.error('API Error loading reranking configs:', rerankingConfigsResponse.error);
+      setError(`Failed to load reranking configurations: ${rerankingConfigsResponse.error}`);
+      setLoading(false);
+      return;
+    }
+    const rerankingConfigsData = rerankingConfigsResponse.configs || [];
+    setRerankingConfigs(rerankingConfigsData);
+
+    // Set active configs
+    const activeChatConfig = chatConfigsData.find((c: any) => c.is_active);
+    setActiveChatConfig(activeChatConfig || null);
+
+    const activeEmbeddingConfig = embeddingConfigsData.find((c: any) => c.is_active);
+    setActiveEmbeddingConfig(activeEmbeddingConfig || null);
+
+    const activeRerankingConfig = rerankingConfigsData.find((c: any) => c.is_active);
+    setActiveRerankingConfig(activeRerankingConfig || null);
+
+    // Initialize provider configs
+    const initialProviderConfigs = Object.entries(providersData).map(([id, info]: [string, any]) => {
+      // Find matching chat config
+      const chatConfig = chatConfigsData.find((c: any) => c.chat_provider === id);
+      // Find matching embedding config
+      const embeddingConfig = embeddingConfigsData.find((c: any) => c.provider === id);
+
+      // Only set base URL for providers that need it
+      let baseUrl = '';
+      if (id === 'ollama') {
+        // Ollama requires a base URL
+        baseUrl = chatConfig?.base_url || embeddingConfig?.base_url || 'http://localhost:11434';
+      } else if (id === 'openrouter') {
+        // OpenRouter has a fixed base URL that should not be changed
+        baseUrl = 'https://openrouter.ai/api';
+      } else {
+        // Other providers like OpenAI don't need a base URL
+        baseUrl = '';
+      }
+
+      return {
+        id,
+        chatConfig: chatConfig || null,
+        embeddingConfig: embeddingConfig || null,
+        enabled: (chatConfig?.is_active || embeddingConfig?.is_active) || false,
+        api_key: chatConfig?.api_key || embeddingConfig?.api_key || '',
+        base_url: baseUrl,
+        model: chatConfig?.model || info.default_model || '',
+        embedding_model: embeddingConfig?.model || '',
+        embedding_provider: embeddingConfig?.provider || id,
+        system_prompt: chatConfig?.system_prompt || 'You are Doogie, a helpful AI assistant.',
+        available_models: [],
+        embedding_models: [],
+        isPolling: false
+      };
+    });
+
+    setProviderConfigs(initialProviderConfigs);
+
+    // Update systemPrompt state with the active chat configuration's system prompt
+    if (activeChatConfig) {
+      if (activeChatConfig.system_prompt) {
+        setSystemPrompt(activeChatConfig.system_prompt);
+      }
+
+      // Set the selected chat provider and model based on active config
+      setSelectedChatProvider(activeChatConfig.chat_provider);
+      setSelectedChatModel(activeChatConfig.model);
+
+      // Get reranking info from config
+      const rerankingProvider = activeChatConfig.config?.reranking_provider || '';
+      const rerankingModel = activeChatConfig.config?.reranking_model || '';
+      setSelectedRerankingProvider(rerankingProvider);
+      setSelectedRerankingModel(rerankingModel);
+    }
+
+    // Set the selected embedding provider and model based on active embedding config
+    if (activeEmbeddingConfig) {
+      setSelectedEmbeddingProvider(activeEmbeddingConfig.provider);
+      setSelectedEmbeddingModel(activeEmbeddingConfig.model);
+    }
+
+    // If all loads succeed, set loading to false
+    setLoading(false);
   };
 
   return (
