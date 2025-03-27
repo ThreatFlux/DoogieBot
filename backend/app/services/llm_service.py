@@ -16,6 +16,7 @@ from app.services.chat import ChatService
 from app.services.llm_config import LLMConfigService
 from app.services.embedding_config import EmbeddingConfigService
 from app.services.reranking_config import RerankingConfigService
+from app.services.mcp_config_service import MCPConfigService # <-- Import MCP Service
 from app.rag.hybrid_retriever import HybridRetriever
 from app.core.config import settings
 # Import the extracted functions
@@ -25,6 +26,10 @@ from .llm_stream import stream_llm_response
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+MAX_TOOL_TURNS = 5 # Maximum number of LLM <-> Tool execution cycles per user message
+
 
 class LLMService:
     """
@@ -40,12 +45,14 @@ class LLMService:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         embedding_model: Optional[str] = None,
-        temperature: Optional[float] = None # Added temperature to init args (optional)
+        temperature: Optional[float] = None, # Added temperature to init args (optional)
+        user_id: Optional[str] = None # <-- Add user_id
     ):
         """
         Initialize the LLM service.
         """
         self.db = db
+        self.user_id = user_id # <-- Store user_id
 
         # Get active configurations from database
         chat_config = LLMConfigService.get_active_config(db)
@@ -116,12 +123,12 @@ class LLMService:
         # Create retriever for RAG
         self.retriever = HybridRetriever(db)
 
+
     async def chat(
         self,
         chat_id: str,
         user_message: str,
         use_rag: bool = True,
-        # temperature: float = 0.7, # Removed temperature parameter
         max_tokens: Optional[int] = None,
         stream: bool = True
     ) -> Union[Dict[str, Any], AsyncGenerator[Dict[str, Any], None]]:
@@ -138,201 +145,388 @@ class LLMService:
         # Add RAG context if enabled
         context_documents = None
         if use_rag:
-            # Call the extracted RAG function
             context_documents = await get_rag_context(
-                db=self.db,
-                embedding_client=self.embedding_client,
-                retriever=self.retriever,
-                query=user_message
-                # top_k is handled within get_rag_context using config
+                db=self.db, embedding_client=self.embedding_client,
+                retriever=self.retriever, query=user_message
             )
-
             if context_documents:
-                # Create context message and append to system prompt
                 context_text = "\n\nHere is some relevant information that may help you answer the user's question:\n\n"
-                for i, doc in enumerate(context_documents):
-                    context_text += f"[{i+1}] {doc['content']}\n\n"
-
+                for i, doc in enumerate(context_documents): context_text += f"[{i+1}] {doc['content']}\n\n"
                 context_text += "Please use this information to help answer the user's question. If the information doesn't contain the answer, just say so."
-
-                # Combine with system prompt
                 current_system_prompt += context_text
                 logger.info(f"Added RAG context to system prompt. Combined length: {len(current_system_prompt)}")
 
-        # Format messages for the LLM
-        formatted_messages = [
-            self.chat_client.format_chat_message("system", current_system_prompt)
-        ]
+        # --- Start Tool Fetching and Formatting ---
+        tools = []
+        enabled_mcp_configs = [] # Keep track of configs for later execution
+        
+        if self.user_id:
+            try:
+                # Get all enabled MCP configs for this user
+                enabled_mcp_configs = [c for c in MCPConfigService.get_configs_by_user(self.db, self.user_id) if c.enabled]
+                logger.info(f"Found {len(enabled_mcp_configs)} enabled MCP servers for user {self.user_id}")
+                
+                # Process each config and collect tool information directly from servers
+                # In a production environment, this would fetch tools directly from running MCP servers
+                # using the MCP protocol to query for available tools
+                for config in enabled_mcp_configs:
+                    # We would use the MCP client protocol to query each server's available tools
+                    # This is a simplified implementation that uses the config info
+                    try:
+                        # First check if the server is running
+                        server_status = MCPConfigService.get_config_status(self.db, config.id)
+                        if not server_status or server_status.status != "running":
+                            logger.warning(f"MCP server {config.name} is not running, starting it...")
+                            server_status = MCPConfigService.start_server(self.db, config.id)
+                            
+                        if server_status and server_status.status == "running":
+                            logger.info(f"MCP server {config.name} is running, collecting tools...")
+                            
+                            # Here we would use MCP client to request tool definitions
+                            # For now, we create a simple unique prefix name for all tools from this server
+                            prefix = config.name.replace('-', '_')
+                            
+                            # If tool information isn't directly available now, we pass a generic parameter schema
+                            # that the LLM can use, and the actual validation happens when executing the tool
+                            tools.append({
+                                "type": "function", 
+                                "function": {
+                                    "name": f"{prefix}__call_tool", 
+                                    "description": f"Call a tool from the {config.name} MCP server", 
+                                    "parameters": {
+                                        "type": "object", 
+                                        "properties": {
+                                            "tool_name": {
+                                                "type": "string", 
+                                                "description": f"The name of the tool to call on the {config.name} server"
+                                            },
+                                            "arguments": {
+                                                "type": "object", 
+                                                "description": "The arguments to pass to the tool"
+                                            }
+                                        },
+                                        "required": ["tool_name"]
+                                    }
+                                }
+                            })
+                        else:
+                            logger.error(f"Failed to start MCP server {config.name}: {server_status.error_message if server_status else 'Unknown error'}")
+                    except Exception as e:
+                        logger.error(f"Error processing MCP server {config.name}: {e}")
+                
+                if tools: 
+                    logger.info(f"Generated {len(tools)} tool schemas from MCP servers")
+            except Exception as e: 
+                logger.error(f"Failed to fetch or format MCP tools: {e}")
+                tools = []
+        else: 
+            logger.warning("No user_id provided, cannot fetch MCP tools.")
+            tools = []
+        # --- End Tool Fetching and Formatting ---
 
-        # Add chat history
+        # Format messages for the LLM, including history
+        formatted_messages = [self.chat_client.format_chat_message("system", current_system_prompt)]
         for msg in messages:
-            formatted_messages.append(
-                self.chat_client.format_chat_message(msg.role, msg.content)
-            )
+            # Format message based on role and add tool data if present
+            if msg.role == "tool" and msg.tool_call_id:
+                # Format tool result message
+                formatted_messages.append(self.chat_client.format_chat_message(
+                    "tool", 
+                    msg.content, 
+                    tool_call_id=msg.tool_call_id,
+                    name=msg.name
+                ))
+            elif msg.role == "assistant" and msg.tool_calls:
+                # Format assistant message with tool calls
+                formatted_messages.append(self.chat_client.format_chat_message(
+                    "assistant", 
+                    msg.content, 
+                    tool_calls=msg.tool_calls
+                ))
+            else:
+                # Regular message formatting
+                formatted_messages.append(self.chat_client.format_chat_message(msg.role, msg.content))
+        formatted_messages.append(self.chat_client.format_chat_message("user", user_message))
 
-        # Add user message
-        formatted_messages.append(
-            self.chat_client.format_chat_message("user", user_message)
-        )
-
-        # Log message count and roles for debugging
+        # Logging
         roles = [msg["role"] for msg in formatted_messages]
         logger.info(f"Sending {len(formatted_messages)} messages to LLM. Roles: {roles}")
-
-        # Log prompt details if debug logging is enabled
         if settings.LLM_DEBUG_LOGGING:
-            # Simplified logging for brevity in refactored file
-            logger.info("Full prompt logging enabled (details omitted here, check original file if needed)")
-            if context_documents:
-                 logger.info(f"RAG context included: {len(context_documents)} documents")
-        elif context_documents:
-             logger.info(f"RAG context included: {len(context_documents)} documents")
-
+            if context_documents: logger.info(f"RAG context included: {len(context_documents)} documents")
+            if tools: logger.info(f"Tools included: {json.dumps(tools, indent=2)}")
+        elif context_documents: logger.info(f"RAG context included: {len(context_documents)} documents")
+        elif tools: logger.info(f"Tools included: {len(tools)} tools")
 
         # Generate response
         if stream:
-            # Call the extracted streaming function
+            # Streaming logic (passes tools down)
             return stream_llm_response(
-                db=self.db,
-                chat_client=self.chat_client,
-                chat_id=chat_id,
-                formatted_messages=formatted_messages,
-                temperature=self.temperature, # Use instance temperature
-                max_tokens=max_tokens,
-                context_documents=context_documents,
-                system_prompt=current_system_prompt, # Pass the potentially modified system prompt
-                model=self.model, # Pass instance model
-                provider=self.provider # Pass instance provider
+                db=self.db, chat_client=self.chat_client, chat_id=chat_id,
+                formatted_messages=formatted_messages, temperature=self.temperature, max_tokens=max_tokens,
+                context_documents=context_documents, system_prompt=current_system_prompt,
+                model=self.model, provider=self.provider, tools=tools
             )
         else:
-            # Non-streaming generation
-            start_time = time.time()
-            response = await self.chat_client.generate(
-                formatted_messages,
-                temperature=self.temperature, # Use instance temperature
-                max_tokens=max_tokens,
-                stream=False
-            )
-            end_time = time.time()
-            duration = end_time - start_time
+            # --- Non-Streaming Multi-Turn Logic ---
+            current_response = None
+            # Make a copy of messages to modify within the loop
+            current_formatted_messages = list(formatted_messages)
+            # Keep track of enabled configs for tool execution mapping
+            configs_map = {cfg.name.replace('-', '_'): cfg.id for cfg in enabled_mcp_configs}
 
-            # Calculate tokens per second if possible
-            tokens = response.get("tokens")
-            tokens_per_second = tokens / duration if tokens and duration > 0 else 0.0
+            for turn in range(MAX_TOOL_TURNS):
+                logger.info(f"Non-Streaming Tool Turn {turn + 1}/{MAX_TOOL_TURNS}")
+                start_time = time.time()
+                # Only send tools/tool_choice on the first turn
+                send_tools = tools if turn == 0 else None
+                tool_choice_this_turn = "auto" if turn == 0 else None
 
-            # Save assistant message to database
-            ChatService.add_message(
-                self.db,
-                chat_id,
-                "assistant",
-                response["content"],
-                tokens=tokens,
-                tokens_per_second=tokens_per_second,
-                model=response.get("model", self.model), # Use model from response or instance
-                provider=response.get("provider", self.provider), # Use provider from response or instance
-                context_documents=[doc["id"] for doc in context_documents] if context_documents else None
-            )
+                try:
+                    current_response = await self.chat_client.generate(
+                        current_formatted_messages, # Use the potentially updated message list
+                        temperature=self.temperature, max_tokens=max_tokens,
+                        stream=False, tools=send_tools, tool_choice=tool_choice_this_turn
+                    )
+                except Exception as llm_error:
+                    logger.exception(f"LLM generation failed on turn {turn + 1}: {llm_error}")
+                    error_content = f"An error occurred while communicating with the AI model: {str(llm_error)}"
+                    # Save error message before returning
+                    ChatService.add_message(self.db, chat_id, "assistant", error_content, finish_reason="error", model=self.model, provider=self.provider)
+                    return {"content": error_content, "finish_reason": "error"}
 
-            # Add tokens_per_second to the response dict if not already present
-            if "tokens_per_second" not in response:
-                 response["tokens_per_second"] = tokens_per_second
+                end_time = time.time()
+                duration = end_time - start_time
 
-            return response
+                tool_calls = current_response.get("tool_calls")
+                content = current_response.get("content")
+                usage = current_response.get("usage", {})
+                completion_tokens = usage.get("completion_tokens", len(content.split()) if content else (len(json.dumps(tool_calls)) // 4 if tool_calls else 0))
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+                tokens_per_second = completion_tokens / duration if completion_tokens and duration > 0 else 0.0
+                finish_reason = current_response.get("finish_reason")
+                response_model = current_response.get("model", self.model)
+                response_provider = current_response.get("provider", self.provider)
 
-    # Removed _stream_response method - now in llm_stream.py
-    # Removed _get_rag_context method - now in llm_rag.py
-    # Removed _rerank_documents method - now in llm_rag.py
+                # Add tokens_per_second for consistency, even if not used later
+                if "tokens_per_second" not in current_response: current_response["tokens_per_second"] = tokens_per_second
+
+                if tool_calls:
+                    logger.info(f"Received tool_calls response: {tool_calls}")
+                    # 1. Save Assistant Message with Tool Calls
+                    assistant_message_db = ChatService.add_message(
+                         self.db, chat_id, "assistant", content=content, # Save potential preceding content
+                         tool_calls=tool_calls, tokens=total_tokens, prompt_tokens=prompt_tokens,
+                         completion_tokens=completion_tokens, tokens_per_second=tokens_per_second,
+                         model=response_model, provider=response_provider,
+                         finish_reason="tool_calls"
+                    )
+                    # Append assistant message dict to history
+                    current_formatted_messages.append(self.chat_client.format_chat_message("assistant", content, tool_calls=tool_calls))
+
+                    # 2. Execute Tools and Collect Results
+                    tool_results_messages = []
+                    if not self.user_id: # Should have been checked earlier, but double-check
+                         logger.error("Cannot execute tools: user_id missing.")
+                         # Return the assistant message asking for tools, as we can't proceed
+                         return current_response
+
+                    tool_execution_tasks = []
+                    for tool_call in tool_calls:
+                        tool_call_id = tool_call.get("id")
+                        function_info = tool_call.get("function", {})
+                        full_tool_name = function_info.get("name")
+                        arguments_str = function_info.get("arguments", "{}")
+                        
+                        if not tool_call_id or not full_tool_name: 
+                            continue
+                            
+                        # Handle special case for the generic call_tool function
+                        if full_tool_name.endswith("__call_tool"):
+                            try:
+                                # Parse arguments to extract the real tool name and arguments
+                                args = json.loads(arguments_str)
+                                real_tool_name = args.get("tool_name")
+                                tool_args = args.get("arguments", {})
+                                
+                                if real_tool_name:
+                                    # Create correct format for the MCP execution
+                                    server_name_prefix = full_tool_name.split("__")[0]
+                                    config_id = configs_map.get(server_name_prefix)
+                                    
+                                    if config_id:
+                                        actual_tool_name = f"{server_name_prefix}__{real_tool_name}"
+                                        logger.info(f"Processing call_tool request: {actual_tool_name} with args: {tool_args}")
+                                        
+                                        # Execute the actual tool
+                                        tool_execution_tasks.append(
+                                            asyncio.to_thread(
+                                                MCPConfigService.execute_mcp_tool,
+                                                db=self.db, config_id=config_id, tool_call_id=tool_call_id,
+                                                tool_name=actual_tool_name, arguments_str=json.dumps(tool_args)
+                                            )
+                                        )
+                                    else:
+                                        error_msg = f"Config for server '{server_name_prefix}' not found"
+                                        logger.error(error_msg)
+                                        tool_result_content_str = json.dumps({"error": {"message": error_msg}})
+                                        tool_message_for_llm = {"role": "tool", "tool_call_id": tool_call_id, "name": full_tool_name, "content": tool_result_content_str}
+                                        tool_results_messages.append(tool_message_for_llm)
+                                        ChatService.add_message(self.db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
+                                else:
+                                    error_msg = "Missing tool_name in call_tool arguments"
+                                    logger.error(error_msg)
+                                    tool_result_content_str = json.dumps({"error": {"message": error_msg}})
+                                    tool_message_for_llm = {"role": "tool", "tool_call_id": tool_call_id, "name": full_tool_name, "content": tool_result_content_str}
+                                    tool_results_messages.append(tool_message_for_llm)
+                                    ChatService.add_message(self.db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
+                            except json.JSONDecodeError as e:
+                                error_msg = f"Invalid JSON in call_tool arguments: {e}"
+                                logger.error(error_msg)
+                                tool_result_content_str = json.dumps({"error": {"message": error_msg}})
+                                tool_message_for_llm = {"role": "tool", "tool_call_id": tool_call_id, "name": full_tool_name, "content": tool_result_content_str}
+                                tool_results_messages.append(tool_message_for_llm)
+                                ChatService.add_message(self.db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
+                        else:
+                            # Handle direct tool calls (when specific tools are exposed)
+                            server_name_prefix = full_tool_name.split("__")[0]
+                            config_id = configs_map.get(server_name_prefix)
+                            if not config_id:
+                                logger.error(f"Could not find MCP config for tool: {server_name_prefix}")
+                                tool_result_content_str = json.dumps({"error": {"message": f"Config for tool '{full_tool_name}' not found."}})
+                                tool_message_for_llm = {"role": "tool", "tool_call_id": tool_call_id, "name": full_tool_name, "content": tool_result_content_str}
+                                tool_results_messages.append(tool_message_for_llm)
+                                ChatService.add_message(self.db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
+                            else:
+                                tool_execution_tasks.append(
+                                    asyncio.to_thread( # Run sync execute_mcp_tool in thread
+                                        MCPConfigService.execute_mcp_tool,
+                                        db=self.db, config_id=config_id, tool_call_id=tool_call_id,
+                                        tool_name=full_tool_name, arguments_str=arguments_str
+                                    )
+                                )
+
+                    if tool_execution_tasks:
+                         execution_outcomes = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+                         for i, outcome in enumerate(execution_outcomes):
+                             try:
+                                 original_call_info = tool_calls[i] # Assumes order matches tasks
+                                 tool_call_id = original_call_info["id"]
+                                 full_tool_name = original_call_info["function"]["name"]
+                                 
+                                 if isinstance(outcome, Exception):
+                                     logger.exception(f"Error executing tool {full_tool_name}: {outcome}")
+                                     tool_result_content_str = json.dumps({"error": {"message": f"Error executing tool: {str(outcome)}"}})
+                                 else: 
+                                     tool_result_content_str = outcome.get("result", '{"error": "Tool execution failed."}')
+                                     
+                                 tool_message_for_llm = {"role": "tool", "tool_call_id": tool_call_id, "name": full_tool_name, "content": tool_result_content_str}
+                                 tool_results_messages.append(tool_message_for_llm)
+                                 ChatService.add_message(self.db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
+                             except Exception as e:
+                                 logger.exception(f"Error processing tool execution outcome: {e}")
+
+                    current_formatted_messages.extend(tool_results_messages) # Add results for the next LLM call
+                    # Continue to the next iteration of the loop
+
+                elif content:
+                    # --- Handle Final Content Response ---
+                    logger.info(f"Received final content response on turn {turn + 1}.")
+                    ChatService.add_message(
+                        self.db, chat_id, "assistant", content,
+                        tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                        tokens_per_second=tokens_per_second, model=response_model, provider=response_provider,
+                        context_documents=[doc["id"] for doc in context_documents] if context_documents else None,
+                        finish_reason=finish_reason
+                    )
+                    return current_response # Exit loop and return final response
+                else:
+                    # Handle unexpected empty response
+                    logger.warning(f"LLM response had no content or tool_calls on turn {turn + 1}. Finish reason: {finish_reason}")
+                    error_content = "I received an empty response from the AI model."
+                    ChatService.add_message(self.db, chat_id, "assistant", error_content, finish_reason=finish_reason or "error", model=response_model, provider=response_provider)
+                    current_response["content"] = error_content # Add error content
+                    return current_response # Exit loop and return error response
+
+            # If loop finishes without returning content (exceeded MAX_TOOL_TURNS)
+            logger.error(f"Exceeded maximum tool turns ({MAX_TOOL_TURNS}).")
+            error_content = "I could not complete the request after multiple tool uses. Please try rephrasing."
+            ChatService.add_message(self.db, chat_id, "assistant", error_content, finish_reason="tool_loop_limit", model=self.model, provider=self.provider)
+            # Return the last response received, but add error content
+            if current_response: current_response["content"] = error_content
+            else: current_response = {"content": error_content, "finish_reason": "tool_loop_limit"}
+            return current_response
+
 
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """
-        Get embeddings for a list of texts using the configured embedding client.
-        """
+        """ Get embeddings for a list of texts using the configured embedding client. """
         return await self.embedding_client.get_embeddings(texts)
 
     async def get_available_models(self) -> tuple[List[str], List[str]]:
-        """
-        Get available models for the current provider.
-        Attempts dynamic fetching, falls back to static lists.
-        """
+        """ Get available models for the current provider. """
         chat_models = []
         embedding_models = []
-
+        
         try:
-            # Use chat_client if it has list_models capability (covers Ollama, OpenRouter)
             if hasattr(self.chat_client, 'list_models'):
                 models_data = await self.chat_client.list_models()
                 if self.provider == "ollama":
                     chat_models = models_data
-                    embedding_models = models_data # Ollama uses same models for both
+                    embedding_models = models_data
                 elif self.provider == "openrouter":
-                     # Process OpenRouter response (assuming it's a list of dicts with 'id')
-                     model_groups = {}
-                     for model_info in models_data:
-                         if model_info.get("id"):
-                             provider_prefix = model_info["id"].split("/")[0] if "/" in model_info["id"] else "other"
-                             if provider_prefix not in model_groups:
-                                 model_groups[provider_prefix] = []
-                             model_groups[provider_prefix].append(model_info["id"])
-                     # Sort and flatten
-                     for provider_prefix in sorted(model_groups.keys()):
-                         chat_models.extend(sorted(model_groups[provider_prefix]))
-                     embedding_models = ["openai/text-embedding-ada-002"] # Default for OpenRouter
+                    model_groups = {}
+                    for model_info in models_data:
+                        if model_info.get("id"):
+                            provider_prefix = model_info["id"].split("/")[0] if "/" in model_info["id"] else "other"
+                            if provider_prefix not in model_groups: 
+                                model_groups[provider_prefix] = []
+                            model_groups[provider_prefix].append(model_info["id"])
+                    for provider_prefix in sorted(model_groups.keys()):
+                        chat_models.extend(sorted(model_groups[provider_prefix]))
+                    embedding_models = ["openai/text-embedding-ada-002"]
                 else:
-                     # Generic handling if other providers implement list_models
-                     chat_models = models_data
-                     # Assume no embedding models unless specified
-                     embedding_models = []
-
-            # Specific provider logic if list_models isn't available on chat_client
+                    chat_models = models_data
+                    embedding_models = []
             elif self.provider == "openai":
                 chat_models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
                 embedding_models = ["text-embedding-ada-002", "text-embedding-3-small", "text-embedding-3-large"]
             elif self.provider == "anthropic":
-                 chat_models = [
-                     "claude-3-opus-20240229", "claude-3-sonnet-20240229",
-                     "claude-3-haiku-20240307", "claude-2.1", "claude-2.0",
-                     "claude-instant-1.2"
-                 ]
-                 embedding_models = []
+                chat_models = ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307", "claude-2.1", "claude-2.0", "claude-instant-1.2"]
+                embedding_models = []
             elif self.provider == "google_gemini":
-                 try:
-                     # Configure API key
-                     api_key_to_use = self.api_key or LLMConfigService.get_active_config(self.db).api_key
-                     if api_key_to_use:
-                         genai.configure(api_key=api_key_to_use)
-                         all_models = genai.list_models()
-                         for model in all_models:
-                             if 'generateContent' in model.supported_generation_methods:
-                                 chat_models.append(model.name)
-                             if 'embedContent' in model.supported_generation_methods and 'aqa' not in model.name:
-                                 embedding_models.append(model.name)
-                         chat_models.sort()
-                         embedding_models.sort()
-                     else:
-                         raise ValueError("Google Gemini API key required.")
-                 except Exception as e:
-                     logger.error(f"Failed to list Google Gemini models dynamically: {e}. Using fallback.")
-                     # Fallback list
-                     chat_models = ["models/gemini-pro", "models/gemini-1.5-pro-latest"]
-                     embedding_models = ["models/embedding-001"]
+                try:
+                    api_key_to_use = self.api_key or LLMConfigService.get_active_config(self.db).api_key
+                    if api_key_to_use:
+                        genai.configure(api_key=api_key_to_use)
+                        all_models = genai.list_models()
+                        for model in all_models:
+                            if 'generateContent' in model.supported_generation_methods: 
+                                chat_models.append(model.name)
+                            if 'embedContent' in model.supported_generation_methods and 'aqa' not in model.name: 
+                                embedding_models.append(model.name)
+                        chat_models.sort()
+                        embedding_models.sort()
+                    else:
+                        raise ValueError("Google Gemini API key required.")
+                except Exception as e:
+                    logger.error(f"Failed to list Google Gemini models dynamically: {e}. Using fallback.")
+                    chat_models = ["models/gemini-pro", "models/gemini-1.5-pro-latest"]
+                    embedding_models = ["models/embedding-001"]
             elif self.provider == "deepseek":
-                 chat_models = ["deepseek-chat", "deepseek-coder"]
-                 embedding_models = ["deepseek-embedding"]
+                chat_models = ["deepseek-chat", "deepseek-coder"]
+                embedding_models = ["deepseek-embedding"]
             else:
-                 logger.warning(f"Model listing not implemented or failed for provider: {self.provider}")
+                logger.warning(f"Model listing not implemented or failed for provider: {self.provider}")
 
-            # Ensure embedding models are listed if using a separate embedding client
             if self.embedding_client != self.chat_client and hasattr(self.embedding_client, 'list_models'):
-                 try:
-                     embedding_models_from_client = await self.embedding_client.list_models()
-                     # Use these if available, otherwise keep potentially derived list
-                     if embedding_models_from_client:
-                          embedding_models = embedding_models_from_client
-                 except Exception as e:
-                      logger.error(f"Failed to list models from separate embedding client: {e}")
+                try:
+                    embedding_models_from_client = await self.embedding_client.list_models()
+                    if embedding_models_from_client:
+                        embedding_models = embedding_models_from_client
+                except Exception as e:
+                    logger.error(f"Failed to list models from separate embedding client: {e}")
 
             return sorted(list(set(chat_models))), sorted(list(set(embedding_models)))
-
         except Exception as e:
-            logger.error(f"Error getting available models: {str(e)}")
+            logger.error(f"Error getting available models: {e}")
             return [], []
