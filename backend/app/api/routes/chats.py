@@ -16,6 +16,7 @@ from app.schemas.chat import (
     MessageResponse,
     MessageUpdate,
     FeedbackCreate,
+    PaginatedMessageResponse, # Import the new schema
     StreamingResponse as StreamingResponseSchema
 )
 from app.services.chat import ChatService
@@ -73,18 +74,34 @@ async def get_flagged_chats(
         "pages": (total + limit - 1) // limit if limit > 0 else 1
     }
 
-@router.get("/admin/feedback", response_model=List[MessageResponse])
+@router.get("/admin/feedback", response_model=PaginatedMessageResponse) # Update response model
 def read_feedback_messages(
     db: Session = Depends(get_db),
     feedback_type: str = None,
     reviewed: bool = None,
+    skip: int = 0, # Add skip parameter
+    limit: int = 100, # Add limit parameter
     current_user: User = Depends(get_current_admin_user),
 ) -> Any:
     """
-    Get messages with feedback. Admin only.
+    Get paginated messages with feedback. Admin only.
     """
-    messages = ChatService.get_feedback_messages(db, feedback_type, reviewed)
-    return messages
+    messages, total = ChatService.get_feedback_messages(
+        db, feedback_type, reviewed, skip=skip, limit=limit # Pass skip and limit
+    )
+    
+    # Construct paginated response
+    page = skip // limit + 1 if limit > 0 else 1
+    pages = (total + limit - 1) // limit if limit > 0 else 1
+    
+    # Let FastAPI handle serialization using the response_model and from_attributes=True
+    return {
+        "items": messages, # Return the list of SQLAlchemy Message objects directly
+        "total": total,
+        "page": page,
+        "size": limit,
+        "pages": pages
+    }
 
 @router.put("/admin/messages/{message_id}", response_model=MessageResponse)
 def update_message(

@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator # Import field_validator
 from datetime import datetime
 
 # Message schemas
@@ -27,6 +27,19 @@ class MessageResponse(MessageBase):
     feedback_text: Optional[str] = None
     reviewed: Optional[bool] = False
     context_documents: Optional[List[str]] = None
+
+    @field_validator('context_documents', mode='before')
+    @classmethod
+    def validate_context_documents(cls, v: Any) -> Optional[List[str]]:
+        """Ensure context_documents is a list of strings or None."""
+        if v is None:
+            return None
+        if isinstance(v, list):
+            # Ensure all elements are strings, handling potential non-string items
+            return [str(item) for item in v if item is not None]
+        # Fallback: If it's not None or a list, return an empty list
+        # This handles cases where the JSON might be stored differently unexpectedly
+        return []
 
     class Config:
         from_attributes = True
@@ -65,6 +78,13 @@ class ChatListResponse(ChatBase):
 # Paginated response schemas
 class PaginatedChatListResponse(BaseModel):
     items: List[ChatListResponse]
+    total: int
+    page: int
+    size: int
+    pages: int
+
+class PaginatedMessageResponse(BaseModel):
+    items: List[MessageResponse]
     total: int
     page: int
     size: int

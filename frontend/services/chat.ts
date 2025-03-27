@@ -468,38 +468,47 @@ export const submitFeedback = async (
   return { message: response.data };
 };
 
-// Get all messages with feedback (admin only)
-export const getFeedbackMessages = async (
-  feedbackType?: string,
-  reviewed?: boolean
+// Get paginated messages with feedback (admin only)
+export const getAdminFeedbackMessages = async (
+  params: {
+    feedbackType?: string;
+    reviewed?: boolean;
+    page?: number;
+    pageSize?: number;
+  } = {}
 ): Promise<{
-  messages?: Message[];
+  data?: PaginatedResponse<Message>; // Use the generic PaginatedResponse type
   error?: string;
 }> => {
-  let url = '/chats/admin/feedback';
-  const params = new URLSearchParams();
-  
+  const { feedbackType, reviewed, page = 1, pageSize = 20 } = params;
+  const skip = (page - 1) * pageSize;
+  const limit = pageSize;
+
+  const queryParams: Record<string, string> = {
+    skip: skip.toString(),
+    limit: limit.toString(),
+  };
+
   if (feedbackType) {
-    params.append('feedback_type', feedbackType);
+    queryParams.feedback_type = feedbackType;
   }
-  
   if (reviewed !== undefined) {
-    params.append('reviewed', reviewed.toString());
+    queryParams.reviewed = reviewed.toString();
   }
-  
-  const queryString = params.toString();
-  if (queryString) {
-    url += `?${queryString}`;
-  }
-  
-  const response = await get<Message[]>(url);
+
+  // Use the standard 'get' function with query parameters
+  const response = await get<PaginatedResponse<Message>>('/chats/admin/feedback', queryParams);
 
   if (response.error) {
     return { error: response.error };
   }
 
-  return { messages: response.data };
+  // Ensure the response matches the PaginatedResponse structure if needed,
+  // or adjust the backend to return exactly this structure.
+  // Assuming the backend returns { items, total, page, size, pages }
+  return { data: response.data };
 };
+
 
 // Get all chats with negative feedback (admin only) - Legacy function for compatibility
 export const getFlaggedChats = async (params?: PaginationParams): Promise<{

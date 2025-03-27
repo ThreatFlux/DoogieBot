@@ -290,7 +290,7 @@ export const CleanChatPage = () => {
                     message={message}
                     onUpdateMessage={handleUpdateMessage} // From useChatMessages
                     // Pass feedback handler if needed by ImprovedMessageContent
-                    // onFeedback={handleFeedback}
+                    onFeedback={handleFeedback} // Pass the feedback handler
                   />
 
                   {message.role === 'assistant' && message.document_ids && message.document_ids.length > 0 && (
