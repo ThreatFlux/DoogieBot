@@ -144,9 +144,16 @@ class ChatService:
         return message
     
     @staticmethod
-    def get_feedback_messages(db: Session, feedback_type: Optional[str] = None, reviewed: Optional[bool] = None) -> List[Message]:
+    def get_feedback_messages(
+        db: Session,
+        feedback_type: Optional[str] = None,
+        reviewed: Optional[bool] = None,
+        skip: int = 0,
+        limit: int = 100
+    ) -> tuple[List[Message], int]:
         """
-        Get messages with feedback, optionally filtered by feedback type and review status.
+        Get paginated messages with feedback, optionally filtered by feedback type and review status.
+        Returns a tuple of (messages, total_count).
         """
         query = db.query(Message).filter(Message.feedback.isnot(None))
         
@@ -155,8 +162,14 @@ class ChatService:
         
         if reviewed is not None:
             query = query.filter(Message.reviewed == reviewed)
+            
+        # Get total count before pagination
+        total = query.count()
+            
+        # Apply pagination
+        messages = query.order_by(Message.created_at.desc()).offset(skip).limit(limit).all()
         
-        return query.order_by(Message.created_at.desc()).all()
+        return messages, total
 
     @staticmethod
     def get_flagged_chats(db: Session, skip: int = 0, limit: int = 10) -> tuple[List[Chat], int]:
