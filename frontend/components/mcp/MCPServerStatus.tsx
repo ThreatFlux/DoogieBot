@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 import { Badge } from '@/components/ui/badge'; // Assuming shadcn/ui badge component
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Use shadcn/ui tooltip
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui'; // Import from index
 import { Trash2, Play, StopCircle, RefreshCw } from 'lucide-react'; // Assuming package will be installed
 import ConfirmDialog from '@/components/ui/ConfirmDialog'; // Assuming named export
 

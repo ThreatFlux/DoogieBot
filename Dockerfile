@@ -238,8 +238,13 @@ RUN apt-get update && \
 RUN uv venv /app/.venv && \
     mkdir -p /app/backend
 
-# Copy pyproject.toml for dependency installation
+# Copy pyproject.toml AND specific backend source code first
 COPY backend/pyproject.toml /app/backend/
+COPY backend/app /app/backend/app
+COPY backend/main.py /app/backend/main.py
+COPY backend/alembic.ini /app/backend/alembic.ini
+COPY backend/alembic /app/backend/alembic
+# Add any other necessary top-level files/dirs from backend/ here if needed
 
 # Install dependencies with UV
 RUN cd /app/backend && \
@@ -251,8 +256,8 @@ COPY --from=frontend-builder /app/frontend/public /app/frontend/public
 COPY --from=frontend-builder /app/frontend/node_modules /app/frontend/node_modules
 COPY frontend/package.json frontend/next.config.js /app/frontend/
 
-# Copy backend code
-COPY backend/ /app/backend/
+# Backend code already copied, just set ownership
+# COPY backend/ /app/backend/ # Removed redundant copy
 RUN chown -R ${USER_ID}:${GROUP_ID} /app/backend
 
 # Copy entrypoint scripts

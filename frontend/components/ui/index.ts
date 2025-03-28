@@ -5,7 +5,8 @@ export { Button } from './Button';
 export { Input } from './Input';
 export { default as Toast } from './Toast';
 export { default as ConfirmDialog } from './ConfirmDialog';
-export { default as Tooltip } from './Tooltip';
+// Use named exports for tooltip components
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 export { default as SkipLink } from './SkipLink';
 export { default as ProfileDropdown } from './ProfileDropdown';
 
