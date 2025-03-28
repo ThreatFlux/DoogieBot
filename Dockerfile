@@ -70,7 +70,21 @@ RUN pnpm install
 
 # Copy frontend code (will respect .dockerignore for node_modules)
 WORKDIR /app
-COPY frontend/ /app/frontend/
+# Copy frontend source code (selective copy for better caching)
+COPY frontend/.prettierrc frontend/components.json frontend/next-env.d.ts \
+     frontend/next.config.js frontend/package.json frontend/pnpm-lock.yaml \
+     frontend/postcss.config.js frontend/tailwind.config.js frontend/tsconfig.json \
+     /app/frontend/
+COPY frontend/components /app/frontend/components/
+COPY frontend/contexts /app/frontend/contexts/
+COPY frontend/hooks /app/frontend/hooks/
+COPY frontend/pages /app/frontend/pages/
+COPY frontend/public /app/frontend/public/
+COPY frontend/services /app/frontend/services/
+COPY frontend/styles /app/frontend/styles/
+COPY frontend/types /app/frontend/types/
+COPY frontend/utils /app/frontend/utils/
+
 
 # Build frontend for production
 WORKDIR /app/frontend
