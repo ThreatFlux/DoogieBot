@@ -43,13 +43,15 @@ class GoogleGeminiClient(LLMClient):
         model: str,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None, # Gemini doesn't use base_url
-        embedding_model: Optional[str] = None
+        embedding_model: Optional[str] = None,
+        user_id: Optional[str] = None # Add user_id parameter
     ):
         # Use a default embedding model if not provided, specific to Gemini
         default_embedding_model = "models/embedding-001"
         effective_embedding_model = embedding_model or default_embedding_model
 
-        super().__init__(model=model, api_key=api_key, base_url=base_url, embedding_model=effective_embedding_model)
+        # Pass user_id to base class constructor
+        super().__init__(model=model, api_key=api_key, base_url=base_url, embedding_model=effective_embedding_model, user_id=user_id)
 
         if not self.api_key:
             raise ValueError("Google Gemini API key is required.")

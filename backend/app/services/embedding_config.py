@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import update
 import logging
-
+from datetime import datetime, UTC
 from app.models.embedding_config import EmbeddingConfig
 from app.schemas.embedding import EmbeddingConfigCreate, EmbeddingConfigUpdate
 from app.core.config import settings

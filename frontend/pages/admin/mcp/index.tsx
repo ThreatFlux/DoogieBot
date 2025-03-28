@@ -71,7 +71,7 @@ const MCPDashboardPage: React.FC = () => {
                     <TableCell>{config.enabled ? 'Yes' : 'No'}</TableCell>
                     <TableCell className="font-mono text-sm">
                       {/* Display only the image name or first few args for brevity */}
-                      {config.command} {config.args.slice(0, 3).join(' ')}{config.args.length > 3 ? '...' : ''}
+                      {config.command || 'docker'} {config.args ? config.args.slice(0, 3).join(' ') + (config.args.length > 3 ? '...' : '') : ''}
                     </TableCell>
                     <TableCell className="flex justify-end items-center space-x-1"> {/* Use flex for alignment */}
                       <Link href={`/admin/mcp/${config.id}`} passHref>

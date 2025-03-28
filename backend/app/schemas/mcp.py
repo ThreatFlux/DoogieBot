@@ -1,6 +1,6 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any # Added Any
 from datetime import datetime
-from pydantic import BaseModel, Field, validator, ConfigDict, field_validator
+from pydantic import BaseModel, Field, validator, ConfigDict, field_validator, model_serializer # Added model_serializer
 
 class MCPServerConfigBase(BaseModel):
     """
@@ -69,19 +69,54 @@ class MCPServerConfigUpdate(BaseModel):
 class MCPServerConfigInDBBase(MCPServerConfigBase):
     """
     Schema for MCP server configuration as stored in the database.
+    Includes fields from the ORM model that are not part of the base config.
     """
     id: str
     user_id: str
     created_at: datetime
     updated_at: datetime
+    config: Optional[Dict[str, Any]] = None # Include the raw config field
 
     model_config = ConfigDict(from_attributes=True)
 
 class MCPServerConfigResponse(MCPServerConfigInDBBase):
     """
     Schema for MCP server configuration API responses.
+    Ensures command, args, env, enabled are populated from the 'config' JSONB field.
     """
-    pass
+    # Define the fields expected in the response, initially optional
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[Dict[str, str]] = None
+    enabled: Optional[bool] = None
+    
+    @model_serializer(mode='wrap')
+    def serialize_model(self, serializer, info):
+        # Run the default serializer first to get basic field population
+        data = serializer(self)
+
+        # 'self' here is the MCPServerConfigResponse instance being serialized.
+        # Pydantic v2 with from_attributes=True usually populates fields from the ORM object.
+        # The 'config' field from the ORM model should be present on 'self' if using from_attributes.
+        orm_config_dict = getattr(self, 'config', None)
+
+        # Populate response fields from the ORM's config dictionary if they weren't directly set
+        if isinstance(orm_config_dict, dict):
+            data['command'] = data.get('command') if data.get('command') is not None else orm_config_dict.get('command', 'docker')
+            data['args'] = data.get('args') if data.get('args') is not None else orm_config_dict.get('args', [])
+            data['env'] = data.get('env') if data.get('env') is not None else orm_config_dict.get('env')
+            data['enabled'] = data.get('enabled') if data.get('enabled') is not None else orm_config_dict.get('enabled', False)
+        else:
+            # Apply defaults if the config dictionary is missing or not a dict
+            data['command'] = data.get('command', 'docker')
+            data['args'] = data.get('args', [])
+            data['env'] = data.get('env') # Keep None if not set
+            data['enabled'] = data.get('enabled', False)
+
+        # Remove the raw 'config' field from the final response if it exists
+        data.pop('config', None)
+
+        return data
 
 class MCPServerStatus(BaseModel):
     """

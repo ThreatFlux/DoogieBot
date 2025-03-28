@@ -1,4 +1,3 @@
-# backend/app/services/llm_service.py
 from typing import List, Dict, Any, Optional, Union, AsyncGenerator
 import logging
 from sqlalchemy.orm import Session
@@ -16,7 +15,8 @@ from app.services.chat import ChatService
 from app.services.llm_config import LLMConfigService
 from app.services.embedding_config import EmbeddingConfigService
 from app.services.reranking_config import RerankingConfigService
-from app.services.mcp_config_service import MCPConfigService # <-- Import MCP Service
+# Import MCP config service and functions
+from app.services.mcp_config_service import MCPConfigService
 from app.rag.hybrid_retriever import HybridRetriever
 from app.core.config import settings
 # Import the extracted functions
@@ -30,6 +30,53 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_TURNS = 5 # Maximum number of LLM <-> Tool execution cycles per user message
 
+# --- Define KNOWN Schemas for specific MCP Servers ---
+# Used for servers that don't support dynamic mcp.describe
+KNOWN_MCP_TOOL_SCHEMAS = {
+    "fetch": [ # Server name matches config name
+        {
+            "name": "fetch", # Tool name
+            "description": "Fetches a URL from the internet and optionally extracts its contents as markdown.",
+            "input_schema": { # Use input_schema as per MCP spec
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "description": "URL to fetch",
+                        "format": "uri",
+                        "minLength": 1,
+                        "title": "Url",
+                        "type": "string"
+                    },
+                    "max_length": {
+                        "default": 5000,
+                        "description": "Maximum number of characters to return.",
+                        "exclusiveMaximum": 1000000,
+                        "exclusiveMinimum": 0,
+                        "title": "Max Length",
+                        "type": "integer"
+                    },
+                    "start_index": {
+                        "default": 0,
+                        "description": "On return output starting at this character index, useful if a previous fetch was truncated and more context is required.",
+                        "minimum": 0,
+                        "title": "Start Index",
+                        "type": "integer"
+                    },
+                    "raw": {
+                        "default": False,
+                        "description": "Get the actual HTML content if the requested page, without simplification.",
+                        "title": "Raw",
+                        "type": "boolean"
+                    }
+                },
+                "required": ["url"],
+                "title": "Fetch"
+            }
+        }
+    ]
+    # Add other known schemas here if needed
+}
+# ---
 
 class LLMService:
     """
@@ -95,14 +142,15 @@ class LLMService:
                     'provider': self.provider,
                     'model': self.model,
                     'api_key': self.api_key,
-                    'base_url': chat_base_url_to_pass
+                    'base_url': chat_base_url_to_pass,
                 },
                 embedding_config={
                     'provider': embedding_provider,
                     'model': self.embedding_model,
                     'api_key': embedding_api_key,
-                    'base_url': embedding_base_url_to_pass
-                }
+                    'base_url': embedding_base_url_to_pass,
+                },
+                user_id=self.user_id # Pass user_id here
             )
         else:
             client_result = LLMFactory.create_client(
@@ -111,7 +159,8 @@ class LLMService:
                 api_key=self.api_key,
                 base_url=chat_base_url_to_pass,
                 embedding_model=self.embedding_model,
-                embedding_provider=embedding_provider
+                embedding_provider=embedding_provider,
+                user_id=self.user_id # Pass user_id here
             )
 
         # Handle single client or separate clients
@@ -119,6 +168,9 @@ class LLMService:
             self.chat_client, self.embedding_client = client_result
         else:
             self.chat_client = self.embedding_client = client_result
+
+        # Log user_id immediately after client assignment
+        logger.debug(f"LLMService.__init__: Assigned chat_client with user_id={getattr(self.chat_client, 'user_id', 'MISSING')}")
 
         # Create retriever for RAG
         self.retriever = HybridRetriever(db)
@@ -130,10 +182,12 @@ class LLMService:
         user_message: str,
         use_rag: bool = True,
         max_tokens: Optional[int] = None,
-        stream: bool = True
+        stream: bool = True,
+        completion_state: Dict[str, Any] = None # Added state dict parameter
     ) -> Union[Dict[str, Any], AsyncGenerator[Dict[str, Any], None]]:
         """
-        Send a message to the LLM and get a response, orchestrating RAG and streaming.
+        Send a message to the LLM and get a response orchestrating RAG and streaming.
+        If streaming updates the provided completion_state dictionary.
         """
         # Get chat history
         messages = ChatService.get_messages(self.db, chat_id)
@@ -152,101 +206,128 @@ class LLMService:
             if context_documents:
                 context_text = "\n\nHere is some relevant information that may help you answer the user's question:\n\n"
                 for i, doc in enumerate(context_documents): context_text += f"[{i+1}] {doc['content']}\n\n"
-                context_text += "Please use this information to help answer the user's question. If the information doesn't contain the answer, just say so."
+                context_text += "Please use this information to help answer the user's question. If the information doesn't contain the answer just say so."
                 current_system_prompt += context_text
                 logger.info(f"Added RAG context to system prompt. Combined length: {len(current_system_prompt)}")
 
         # --- Start Tool Fetching and Formatting ---
         tools = []
         enabled_mcp_configs = [] # Keep track of configs for later execution
-        
+
         if self.user_id:
             try:
                 # Get all enabled MCP configs for this user
                 enabled_mcp_configs = [c for c in MCPConfigService.get_configs_by_user(self.db, self.user_id) if c.enabled]
                 logger.info(f"Found {len(enabled_mcp_configs)} enabled MCP servers for user {self.user_id}")
-                
-                # Process each config and collect tool information directly from servers
-                # In a production environment, this would fetch tools directly from running MCP servers
-                # using the MCP protocol to query for available tools
+
+                # First try to format tools using KNOWN_MCP_TOOL_SCHEMAS
                 for config in enabled_mcp_configs:
-                    # We would use the MCP client protocol to query each server's available tools
-                    # This is a simplified implementation that uses the config info
-                    try:
-                        # First check if the server is running
-                        server_status = MCPConfigService.get_config_status(self.db, config.id)
-                        if not server_status or server_status.status != "running":
-                            logger.warning(f"MCP server {config.name} is not running, starting it...")
-                            server_status = MCPConfigService.start_server(self.db, config.id)
-                            
-                        if server_status and server_status.status == "running":
-                            logger.info(f"MCP server {config.name} is running, collecting tools...")
-                            
-                            # Here we would use MCP client to request tool definitions
-                            # For now, we create a simple unique prefix name for all tools from this server
-                            prefix = config.name.replace('-', '_')
-                            
-                            # If tool information isn't directly available now, we pass a generic parameter schema
-                            # that the LLM can use, and the actual validation happens when executing the tool
-                            tools.append({
-                                "type": "function", 
-                                "function": {
-                                    "name": f"{prefix}__call_tool", 
-                                    "description": f"Call a tool from the {config.name} MCP server", 
-                                    "parameters": {
-                                        "type": "object", 
-                                        "properties": {
-                                            "tool_name": {
-                                                "type": "string", 
-                                                "description": f"The name of the tool to call on the {config.name} server"
-                                            },
-                                            "arguments": {
-                                                "type": "object", 
-                                                "description": "The arguments to pass to the tool"
-                                            }
-                                        },
-                                        "required": ["tool_name"]
+                    server_name = config.name.lower() # Use lower case for matching
+                    if server_name in KNOWN_MCP_TOOL_SCHEMAS:
+                        known_schemas = KNOWN_MCP_TOOL_SCHEMAS[server_name]
+                        logger.info(f"Using known schema for server '{config.name}'. Found {len(known_schemas)} tool(s).")
+                        for tool_schema in known_schemas:
+                            tool_name = tool_schema.get("name")
+                            description = tool_schema.get("description")
+                            input_schema = tool_schema.get("input_schema")
+
+                            if tool_name and description and input_schema:
+                                # Create a unique name combining server and tool name
+                                unique_tool_name = f"{config.name.replace('-', '_')}__{tool_name}"
+                                formatted_tool = {
+                                    "type": "function", # Standard type for LLM tools
+                                    "function": {
+                                        "name": unique_tool_name,
+                                        "description": description,
+                                        "parameters": input_schema # Pass MCP input_schema as 'parameters'
                                     }
                                 }
-                            })
-                        else:
-                            logger.error(f"Failed to start MCP server {config.name}: {server_status.error_message if server_status else 'Unknown error'}")
-                    except Exception as e:
-                        logger.error(f"Error processing MCP server {config.name}: {e}")
-                
-                if tools: 
+                                tools.append(formatted_tool)
+                                logger.debug(f"Formatted tool: {unique_tool_name}")
+                            else:
+                                logger.warning(f"Skipping invalid known tool schema for server '{config.name}': {tool_schema}")
+                    else:
+                        # Process each config and collect tool information directly from servers
+                        # For servers without known schemas, we use a generic approach
+                        try:
+                            # First check if the server is running
+                            server_status = MCPConfigService.get_config_status(self.db, config.id)
+                            if not server_status or server_status.status != "running":
+                                logger.warning(f"MCP server {config.name} is not running, starting it...")
+                                server_status = MCPConfigService.start_server(self.db, config.id)
+
+                            if server_status and server_status.status == "running":
+                                logger.info(f"MCP server {config.name} is running, collecting tools...")
+
+                                # Here we would use MCP client to request tool definitions
+                                # For now we create a simple unique prefix name for all tools from this server
+                                prefix = config.name.replace('-', '_')
+
+                                # If tool information isn't directly available now, we pass a generic parameter schema
+                                # that the LLM can use and the actual validation happens when executing the tool
+                                tools.append({
+                                    "type": "function",
+                                    "function": {
+                                        "name": f"{prefix}__call_tool",
+                                        "description": f"Call a tool from the {config.name} MCP server",
+                                        "parameters": {
+                                            "type": "object",
+                                            "properties": {
+                                                "tool_name": {
+                                                    "type": "string",
+                                                    "description": f"The name of the tool to call on the {config.name} server"
+                                                },
+                                                "arguments": {
+                                                    "type": "object",
+                                                    "description": "The arguments to pass to the tool"
+                                                }
+                                            },
+                                            "required": ["tool_name"]
+                                        }
+                                    }
+                                })
+                            else:
+                                logger.error(f"Failed to start MCP server {config.name}: {server_status.error_message if server_status else 'Unknown error'}")
+                        except Exception as e:
+                            logger.error(f"Error processing MCP server {config.name}: {e}")
+
+                if tools:
                     logger.info(f"Generated {len(tools)} tool schemas from MCP servers")
-            except Exception as e: 
+            except Exception as e:
                 logger.error(f"Failed to fetch or format MCP tools: {e}")
                 tools = []
-        else: 
+        else:
             logger.warning("No user_id provided, cannot fetch MCP tools.")
             tools = []
         # --- End Tool Fetching and Formatting ---
 
-        # Format messages for the LLM, including history
+        # Explicitly log the final tools list being passed regardless of debug settings
+        logger.info(f"[MCP Tool Check] Final tools list prepared for LLM: {json.dumps(tools, indent=2)}")
+
+        # Format messages for the LLM including history
         formatted_messages = [self.chat_client.format_chat_message("system", current_system_prompt)]
         for msg in messages:
             # Format message based on role and add tool data if present
             if msg.role == "tool" and msg.tool_call_id:
                 # Format tool result message
                 formatted_messages.append(self.chat_client.format_chat_message(
-                    "tool", 
-                    msg.content, 
+                    "tool",
+                    msg.content,
                     tool_call_id=msg.tool_call_id,
                     name=msg.name
                 ))
             elif msg.role == "assistant" and msg.tool_calls:
                 # Format assistant message with tool calls
                 formatted_messages.append(self.chat_client.format_chat_message(
-                    "assistant", 
-                    msg.content, 
+                    "assistant",
+                    msg.content,
                     tool_calls=msg.tool_calls
                 ))
             else:
                 # Regular message formatting
                 formatted_messages.append(self.chat_client.format_chat_message(msg.role, msg.content))
-        formatted_messages.append(self.chat_client.format_chat_message("user", user_message))
+        # Remove duplicate append; user message is now saved by API route and fetched by get_messages
+        # formatted_messages.append(self.chat_client.format_chat_message("user", user_message))
 
         # Logging
         roles = [msg["role"] for msg in formatted_messages]
@@ -259,13 +340,23 @@ class LLMService:
 
         # Generate response
         if stream:
-            # Streaming logic (passes tools down)
-            return stream_llm_response(
-                db=self.db, chat_client=self.chat_client, chat_id=chat_id,
-                formatted_messages=formatted_messages, temperature=self.temperature, max_tokens=max_tokens,
-                context_documents=context_documents, system_prompt=current_system_prompt,
-                model=self.model, provider=self.provider, tools=tools
+            # Log the user_id attribute of the client being passed
+            logger.debug(f"LLMService.chat: Passing chat_client with user_id={getattr(self.chat_client, 'user_id', 'MISSING')}")
+            # Return awaitable generator to be awaited by the caller
+            stream_generator = stream_llm_response(
+                db=self.db,
+                chat_client=self.chat_client, 
+                chat_id=chat_id,
+                formatted_messages=formatted_messages, 
+                temperature=self.temperature, 
+                max_tokens=max_tokens,
+                context_documents=context_documents, 
+                system_prompt=current_system_prompt,
+                model=self.model, 
+                provider=self.provider, 
+                tools=tools
             )
+            return stream_generator # Return the awaitable generator directly
         else:
             # --- Non-Streaming Multi-Turn Logic ---
             current_response = None
@@ -308,7 +399,7 @@ class LLMService:
                 response_model = current_response.get("model", self.model)
                 response_provider = current_response.get("provider", self.provider)
 
-                # Add tokens_per_second for consistency, even if not used later
+                # Add tokens_per_second for consistency even if not used later
                 if "tokens_per_second" not in current_response: current_response["tokens_per_second"] = tokens_per_second
 
                 if tool_calls:
@@ -326,9 +417,9 @@ class LLMService:
 
                     # 2. Execute Tools and Collect Results
                     tool_results_messages = []
-                    if not self.user_id: # Should have been checked earlier, but double-check
+                    if not self.user_id: # Should have been checked earlier but double-check
                          logger.error("Cannot execute tools: user_id missing.")
-                         # Return the assistant message asking for tools, as we can't proceed
+                         # Return the assistant message asking for tools as we can't proceed
                          return current_response
 
                     tool_execution_tasks = []
@@ -337,10 +428,10 @@ class LLMService:
                         function_info = tool_call.get("function", {})
                         full_tool_name = function_info.get("name")
                         arguments_str = function_info.get("arguments", "{}")
-                        
-                        if not tool_call_id or not full_tool_name: 
+
+                        if not tool_call_id or not full_tool_name:
                             continue
-                            
+
                         # Handle special case for the generic call_tool function
                         if full_tool_name.endswith("__call_tool"):
                             try:
@@ -348,16 +439,16 @@ class LLMService:
                                 args = json.loads(arguments_str)
                                 real_tool_name = args.get("tool_name")
                                 tool_args = args.get("arguments", {})
-                                
+
                                 if real_tool_name:
                                     # Create correct format for the MCP execution
                                     server_name_prefix = full_tool_name.split("__")[0]
                                     config_id = configs_map.get(server_name_prefix)
-                                    
+
                                     if config_id:
                                         actual_tool_name = f"{server_name_prefix}__{real_tool_name}"
                                         logger.info(f"Processing call_tool request: {actual_tool_name} with args: {tool_args}")
-                                        
+
                                         # Execute the actual tool
                                         tool_execution_tasks.append(
                                             asyncio.to_thread(
@@ -413,13 +504,13 @@ class LLMService:
                                  original_call_info = tool_calls[i] # Assumes order matches tasks
                                  tool_call_id = original_call_info["id"]
                                  full_tool_name = original_call_info["function"]["name"]
-                                 
+
                                  if isinstance(outcome, Exception):
                                      logger.exception(f"Error executing tool {full_tool_name}: {outcome}")
                                      tool_result_content_str = json.dumps({"error": {"message": f"Error executing tool: {str(outcome)}"}})
-                                 else: 
+                                 else:
                                      tool_result_content_str = outcome.get("result", '{"error": "Tool execution failed."}')
-                                     
+
                                  tool_message_for_llm = {"role": "tool", "tool_call_id": tool_call_id, "name": full_tool_name, "content": tool_result_content_str}
                                  tool_results_messages.append(tool_message_for_llm)
                                  ChatService.add_message(self.db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
@@ -452,7 +543,7 @@ class LLMService:
             logger.error(f"Exceeded maximum tool turns ({MAX_TOOL_TURNS}).")
             error_content = "I could not complete the request after multiple tool uses. Please try rephrasing."
             ChatService.add_message(self.db, chat_id, "assistant", error_content, finish_reason="tool_loop_limit", model=self.model, provider=self.provider)
-            # Return the last response received, but add error content
+            # Return the last response received but add error content
             if current_response: current_response["content"] = error_content
             else: current_response = {"content": error_content, "finish_reason": "tool_loop_limit"}
             return current_response
@@ -466,7 +557,7 @@ class LLMService:
         """ Get available models for the current provider. """
         chat_models = []
         embedding_models = []
-        
+
         try:
             if hasattr(self.chat_client, 'list_models'):
                 models_data = await self.chat_client.list_models()
@@ -478,7 +569,7 @@ class LLMService:
                     for model_info in models_data:
                         if model_info.get("id"):
                             provider_prefix = model_info["id"].split("/")[0] if "/" in model_info["id"] else "other"
-                            if provider_prefix not in model_groups: 
+                            if provider_prefix not in model_groups:
                                 model_groups[provider_prefix] = []
                             model_groups[provider_prefix].append(model_info["id"])
                     for provider_prefix in sorted(model_groups.keys()):
@@ -500,9 +591,9 @@ class LLMService:
                         genai.configure(api_key=api_key_to_use)
                         all_models = genai.list_models()
                         for model in all_models:
-                            if 'generateContent' in model.supported_generation_methods: 
+                            if 'generateContent' in model.supported_generation_methods:
                                 chat_models.append(model.name)
-                            if 'embedContent' in model.supported_generation_methods and 'aqa' not in model.name: 
+                            if 'embedContent' in model.supported_generation_methods and 'aqa' not in model.name:
                                 embedding_models.append(model.name)
                         chat_models.sort()
                         embedding_models.sort()

@@ -19,7 +19,19 @@ from app.schemas.mcp import (
     MCPServerStatus,
     MCPConfigJSON
 )
-from app.services.mcp_config_service import MCPConfigService
+# Import functions directly from the new package
+from app.services.mcp_config_service import (
+    create_config,
+    get_configs_by_user,
+    get_config_by_id,
+    update_config,
+    delete_config,
+    stop_server,
+    get_config_status,
+    start_server,
+    restart_server,
+    generate_mcp_config_json
+)
 from app.utils.deps import get_current_user
 
 router = APIRouter()
@@ -41,7 +53,7 @@ async def create_mcp_config(
             detail="Only admin users can create MCP configurations"
         )
 
-    db_config = MCPConfigService.create_config(db, config, current_user.id)
+    db_config = create_config(db, config, current_user.id) # Use imported function
     return db_config
 
 @router.get("/configs", response_model=List[MCPServerConfigResponse])
@@ -52,7 +64,7 @@ async def get_mcp_configs(
     """
     Get all MCP server configurations for the current user.
     """
-    return MCPConfigService.get_configs_by_user(db, current_user.id)
+    return get_configs_by_user(db, current_user.id) # Use imported function
 
 @router.get("/configs/{config_id}", response_model=MCPServerConfigResponse)
 async def get_mcp_config(
@@ -63,7 +75,7 @@ async def get_mcp_config(
     """
     Get an MCP server configuration by ID.
     """
-    db_config = MCPConfigService.get_config_by_id(db, config_id)
+    db_config = get_config_by_id(db, config_id) # Use imported function
     if not db_config or db_config.user_id != current_user.id:
         raise HTTPException(
             status_code=fastapi_status.HTTP_404_NOT_FOUND, # Use alias
@@ -89,14 +101,14 @@ async def update_mcp_config(
             detail="Only admin users can update MCP configurations"
         )
 
-    db_config = MCPConfigService.get_config_by_id(db, config_id)
+    db_config = get_config_by_id(db, config_id) # Use imported function
     if not db_config or db_config.user_id != current_user.id:
         raise HTTPException(
             status_code=fastapi_status.HTTP_404_NOT_FOUND, # Use alias
             detail="MCP configuration not found"
         )
 
-    updated_config = MCPConfigService.update_config(db, config_id, config_update)
+    updated_config = update_config(db, config_id, config_update) # Use imported function
     return updated_config
 
 @router.delete("/configs/{config_id}", status_code=fastapi_status.HTTP_204_NO_CONTENT) # Use alias
@@ -116,7 +128,7 @@ async def delete_mcp_config(
             detail="Only admin users can delete MCP configurations"
         )
 
-    db_config = MCPConfigService.get_config_by_id(db, config_id)
+    db_config = get_config_by_id(db, config_id) # Use imported function
     if not db_config or db_config.user_id != current_user.id:
         raise HTTPException(
             status_code=fastapi_status.HTTP_404_NOT_FOUND, # Use alias
@@ -125,7 +137,7 @@ async def delete_mcp_config(
 
     # Stop the server if it's running
     try:
-        MCPConfigService.stop_server(db, config_id)
+        stop_server(db, config_id) # Use imported function
     except Exception as e:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR, # Use alias
@@ -133,7 +145,7 @@ async def delete_mcp_config(
         )
 
     # Delete the configuration
-    success = MCPConfigService.delete_config(db, config_id)
+    success = delete_config(db, config_id) # Use imported function
     if not success:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR, # Use alias
@@ -149,14 +161,14 @@ async def get_mcp_config_status(
     """
     Get the status of an MCP server.
     """
-    db_config = MCPConfigService.get_config_by_id(db, config_id)
+    db_config = get_config_by_id(db, config_id) # Use imported function
     if not db_config or db_config.user_id != current_user.id:
         raise HTTPException(
             status_code=fastapi_status.HTTP_404_NOT_FOUND, # Use alias
             detail="MCP configuration not found"
         )
 
-    status_result = MCPConfigService.get_config_status(db, config_id) # Renamed variable
+    status_result = get_config_status(db, config_id) # Use imported function
     if not status_result:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR, # Use alias
@@ -182,20 +194,20 @@ async def start_mcp_server(
             detail="Only admin users can start MCP servers"
         )
 
-    db_config = MCPConfigService.get_config_by_id(db, config_id)
+    db_config = get_config_by_id(db, config_id) # Use imported function
     if not db_config or db_config.user_id != current_user.id:
         raise HTTPException(
             status_code=fastapi_status.HTTP_404_NOT_FOUND, # Use alias
             detail="MCP configuration not found"
         )
 
-    if not db_config.enabled:
+    if not db_config.config or not db_config.config.get('enabled', False):
         raise HTTPException(
             status_code=fastapi_status.HTTP_400_BAD_REQUEST, # Use alias
             detail="Cannot start disabled MCP server"
         )
 
-    status_result = MCPConfigService.start_server(db, config_id) # Renamed variable
+    status_result = start_server(db, config_id) # Use imported function
     if not status_result:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR, # Use alias

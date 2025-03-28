@@ -120,9 +120,37 @@ async def lifespan(app: FastAPI):
             print(f"Error initializing RAG singleton: {str(e)}")
     else:
         print("RAG singleton already initialized by another worker")
-    
+
+    # --- Start enabled MCP servers ---
+    try:
+        # Import functions directly from the new package
+        from app.services.mcp_config_service import get_all_enabled_configs, start_server
+        print("Checking for enabled MCP servers to start...")
+        # Use the new method to get only enabled configs
+        enabled_mcp_configs = get_all_enabled_configs(db) # Call function directly
+        started_count = 0
+        # Iterate through only the enabled configs
+        for config in enabled_mcp_configs:
+            # No need to check 'enabled' again here
+            print(f"Attempting to start enabled MCP server: {config.name} (ID: {config.id})")
+            try:
+                status = start_server(db, config.id) # Call function directly
+                if status and status.status == "running":
+                    print(f"Successfully started/verified MCP server: {config.name}")
+                    started_count += 1
+                else:
+                    print(f"Failed to start MCP server {config.name}. Status: {status.status if status else 'Unknown'}, Error: {status.error_message if status else 'N/A'}")
+            except Exception as mcp_start_err:
+                print(f"Error attempting to start MCP server {config.name}: {mcp_start_err}")
+        print(f"Finished MCP server startup check. Started/Verified {started_count} servers.")
+    except Exception as e:
+        print(f"Error during MCP server startup check: {e}")
+    finally:
+        db.close() # Ensure the session used for startup is closed
+    # --- End MCP server startup ---
+
     yield  # This is where the app runs
-    
+
     # Shutdown logic (after yield)
     # Add any cleanup code here if needed
 

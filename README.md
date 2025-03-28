@@ -1,83 +1,60 @@
 # Doogie Chat Bot
 
-A chat bot application with a Hybrid RAG (BM25 + FAISS) and GraphRAG system, using external LLM services.
+Doogie Chat Bot is a hybrid RAG-based chatbot application with multi-user capabilities.
 
-## Features
+## Fixed Issues
 
-- Hybrid RAG (BM25 + FAISS) for efficient document retrieval
-- GraphRAG for relationship-aware retrieval
-- Multi-user capabilities
-- Admin dashboard
-- Support for multiple LLM providers
-- Document processing
+### MCP Server Configuration
 
-## Requirements
+The MCP server configuration model had a mismatch with the service layer. The model doesn't contain fields for `command`, `args`, and `enabled` that the service was trying to use directly. Instead, these fields are now stored in the `config` JSON field of the model.
 
-- Python 3.12+
-- Node.js 20.x
-- pnpm
+The service has been updated to handle this by:
+1. Creating configurations with fields in the `config` JSON
+2. Accessing these fields via `config.config.get("field_name")` instead of `config.field_name`
+3. Using proper defaults where needed
 
-## Quick Start
+## Database Schema
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/doogie-chat.git
-   cd doogie-chat
-   ```
+### MCPServerConfig
+- id: String (UUID, primary key)
+- name: String (required)
+- description: String (optional)
+- server_type: String (default="custom")
+- base_url: String (optional)
+- api_key: String (optional)
+- models: JSON (optional)
+- status: String (default="stopped")
+- port: Integer (optional)
+- container_id: String (optional)
+- user_id: String (Foreign Key to users.id, required)
+- created_at: DateTime
+- updated_at: DateTime
+- is_active: Boolean (default=true)
+- config: JSON (stores command, args, env, enabled fields)
 
-2. Create a `.env` file based on the example:
-   ```bash
-   cp .env.example .env
-   ```
+## Installation
 
-3. Update the `.env` file with your LLM API keys and other configuration.
-
-4. Start the application with Docker:
-   ```bash
-   make docker-up
-   ```
-
-   Or for production mode:
-   ```bash
-   make docker-up-prod
-   ```
-
-5. Access the application at http://localhost:3000
+1. Clone the repository
+2. Run `make install` to install dependencies
+3. Run `make dev` to start the development server
 
 ## Development
 
-### Directory Structure
+Run the following commands for development:
 
-- `backend/` - FastAPI backend
-- `frontend/` - Next.js frontend
-- `data/` - Persistent data storage
-  - `data/db/` - SQLite database files
-  - `data/indexes/` - RAG index files
-
-### Common Commands
-
-- `make all` - Install dependencies, run linters, and tests
-- `make clean` - Clean up build artifacts, caches, and virtual environment
-- `make install` - Install backend and frontend dependencies
-- `make dev` - Start development environment with Docker
 - `make docker-build` - Build Docker image
-- `make test` - Run tests locally
+- `make docker-up` - Start Docker container in development mode
+- `make docker-down` - Stop Docker container
+- `make docker-up-prod` - Start Docker container in production mode
 - `make docker-test` - Run tests in Docker container
-- `make lint` - Run linters locally
 - `make docker-lint` - Run linters in Docker container
+- `make docker-format` - Format code in Docker container
 - `make docker-security` - Run security checks in Docker container
-- `make generate-docs` - Generate project documentation
 
-## Configuration
+## Admin Setup
 
-- Backend configuration is in `backend/app/core/config.py`
-- Environment variables are defined in the `.env` file
-- For LLM providers, set the API keys in the `.env` file or in the admin dashboard
+Default admin credentials:
+- Email: admin@example.com
+- Password: change-this-password
 
-## Security
-
-Run `make docker-security` to perform security checks.
-
-## License
-
-See the [LICENSE](LICENSE) file for details.
+Remember to change the default admin password after first login.

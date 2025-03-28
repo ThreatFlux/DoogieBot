@@ -32,7 +32,7 @@ const EditMCPConfigPage: React.FC = () => {
       const fetchedConfig = await getMcpConfig(configId);
       setConfig(fetchedConfig);
       setName(fetchedConfig.name);
-      setArgs(fetchedConfig.args.join(' ')); // Join args array into a string for editing
+      setArgs(fetchedConfig.args ? fetchedConfig.args.join(' ') : ''); // Join args array into a string for editing with null check
       setEnvVars(fetchedConfig.env ? JSON.stringify(fetchedConfig.env, null, 2) : ''); // Format env object as JSON string
       setEnabled(fetchedConfig.enabled);
     } catch (error) {
@@ -101,9 +101,13 @@ const EditMCPConfigPage: React.FC = () => {
     const updateData: MCPServerConfigUpdate = {
       // Only include fields if they have changed from the original config
       ...(config?.name !== name && { name }),
-      ...(config?.args.join(' ') !== args && { args: parsedArgs }),
-      ...(JSON.stringify(config?.env || {}, null, 2) !== envVars && { env: Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined }),
-      ...(config?.enabled !== enabled && { enabled }),
+      // Always include args if they are provided
+      ...(args.trim() !== '' && { args: parsedArgs }),
+      // Always include env vars if they've been updated
+      ...(JSON.stringify(config?.env || {}, null, 2) !== envVars && 
+          { env: Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined }),
+      // Always include enabled status
+      enabled,
     };
 
     // Check if there are any actual changes
