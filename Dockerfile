@@ -1,12 +1,6 @@
 # Stage 0: Base image
 FROM python:3.13-slim AS base
 
-# User configuration with defaults
-ARG USER_ID=1000
-ARG GROUP_ID=1000
-# ARG DOCKER_GID=999 # Removed DOCKER_GID argument
-ARG USER_NAME=appuser
-
 # Install minimal system dependencies, UV, and Docker CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -24,23 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
     && apt-get install -y docker-ce-cli \
+    # Install Node.js and npm
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g pnpm \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     # Install UV package manager
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv
 
-# Create non-root user with configurable UID/GID (passed from docker-compose)
-RUN groupadd -g ${GROUP_ID} ${USER_NAME} || true && \
-    useradd -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash -m ${USER_NAME} && \
-    mkdir -p /app && \
-    chown -R ${USER_ID}:${GROUP_ID} /app
-
 # Setup Docker group for Docker-in-Docker support with MCP
-# Ensure docker group exists (might be needed by some tools)
-RUN groupadd -r docker || true
-# Add user to the docker group name (permissions primarily rely on UID/GID matching socket owner)
-RUN usermod -aG docker ${USER_NAME}
+# Ensure the docker group exists (GID might vary, Docker typically uses 999 or similar)
+# We don't need to add the user since we'll run as root.
+RUN groupadd -r docker || getent group docker || groupadd -g 999 docker
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -67,13 +58,6 @@ RUN cd /app/backend && \
 # Stage 2: Builder stage for frontend
 FROM base AS frontend-builder
 
-# Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    npm install -g pnpm
-
 # Set working directory
 WORKDIR /app
 
@@ -84,51 +68,29 @@ COPY frontend/package.json frontend/pnpm-lock.yaml* /app/frontend/
 WORKDIR /app/frontend
 RUN pnpm install
 
-# Temporarily move node_modules out of the way
-RUN mv /app/frontend/node_modules /tmp/node_modules
-
 # Copy frontend code (will respect .dockerignore for node_modules)
 WORKDIR /app
 COPY frontend/ /app/frontend/
-
-# Restore node_modules
-RUN rm -rf /app/frontend/node_modules && \
-    mv /tmp/node_modules /app/frontend/node_modules
 
 # Build frontend for production
 WORKDIR /app/frontend
 RUN NODE_ENV=production pnpm run build
 
-# Stage 3: Test stage
-FROM backend-builder AS test
-
-# Install test dependencies with UV
-RUN cd /app/backend && \
-    uv pip install -e ".[test]" && \
-    uv pip install black pylint mypy
-
-# Copy backend code and test files
-COPY backend/ /app/backend/
-COPY tests/ /app/tests/
-
-# Set test entrypoint
-ENTRYPOINT ["uv", "run", "pytest"]
-CMD ["backend/tests"]
-
-# Stage 4: Development stage
+# Stage 3: Development stage
 FROM base AS development
 
-# Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
+# Install Node.js using nvm
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash && \
+    . "$HOME/.nvm/nvm.sh" && \
+    nvm install 22 && \
+    npm install -g pnpm && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    npm install -g pnpm
+    rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Create necessary directories early
+# Create necessary directories
 RUN mkdir -p /app/backend \
              /app/frontend \
              /app/frontend/node_modules \
@@ -139,7 +101,7 @@ RUN mkdir -p /app/backend \
 # Create virtual environment
 RUN uv venv /app/.venv
 
-# Copy entrypoint scripts first
+# Copy entrypoint scripts
 COPY entrypoint.sh /app/
 COPY entrypoint.prod.sh /app/
 RUN chmod +x /app/entrypoint.sh && \
@@ -148,16 +110,11 @@ RUN chmod +x /app/entrypoint.sh && \
 # Copy backend source code
 COPY backend /app/backend/
 
-# Copy frontend source code (granular copy)
-COPY frontend/.prettierrc /app/frontend/
-COPY frontend/components.json /app/frontend/
-COPY frontend/next-env.d.ts /app/frontend/
-COPY frontend/next.config.js /app/frontend/
-COPY frontend/package.json /app/frontend/
-COPY frontend/pnpm-lock.yaml /app/frontend/
-COPY frontend/postcss.config.js /app/frontend/
-COPY frontend/tailwind.config.js /app/frontend/
-COPY frontend/tsconfig.json /app/frontend/
+# Copy frontend source code (selective copy for better caching)
+COPY frontend/.prettierrc frontend/components.json frontend/next-env.d.ts \
+     frontend/next.config.js frontend/package.json frontend/pnpm-lock.yaml \
+     frontend/postcss.config.js frontend/tailwind.config.js frontend/tsconfig.json \
+     /app/frontend/
 COPY frontend/components /app/frontend/components/
 COPY frontend/contexts /app/frontend/contexts/
 COPY frontend/hooks /app/frontend/hooks/
@@ -168,19 +125,13 @@ COPY frontend/styles /app/frontend/styles/
 COPY frontend/types /app/frontend/types/
 COPY frontend/utils /app/frontend/utils/
 
-# Set ownership for the entire app directory before installing dependencies
-# This needs to happen *after* user/group are created with correct IDs
-RUN chown -R ${USER_ID}:${GROUP_ID} /app
- # Install development tools with UV (after source code is copied and permissions set)
- RUN cd /app/backend && \
-     uv pip install -e ".[dev]"
- 
- # Install frontend dependencies (using pnpm install, should use lock file)
- # Install frontend dependencies (using pnpm install, should use lock file)
-# No need to run this here if using bind mounts for dev, but good for standalone image
-# RUN cd /app/frontend && pnpm install
+# Ownership is handled by running as root, no chown needed
 
-# Create config files (after backend code is copied)
+# Install development tools with UV
+RUN cd /app/backend && \
+    uv pip install -e ".[dev]"
+
+# Create config files
 RUN echo 'exclude_dirs: ["/venv", "/tests"]' > /app/backend/bandit.yaml
 
 # Environment variables for development
@@ -188,7 +139,6 @@ ENV NODE_ENV=development \
     FASTAPI_ENV=development \
     PNPM_HOME=".local/share/pnpm" \
     PATH="/app/.venv/bin:${PATH}" \
-    # MCP configuration
     MCP_NETWORK=mcp-network \
     MCP_DATA_DIR=/var/lib/doogie-chat/mcp \
     MCP_ENABLE_DOCKER=true
@@ -196,52 +146,59 @@ ENV NODE_ENV=development \
 # Add pnpm to PATH
 ENV PATH="${PNPM_HOME}:${PATH}"
 
-# Switch to configured user
-# USER ${USER_ID}:${GROUP_ID} # Commented out to run as root for dev/testing
-
 # Development-specific command
 CMD ["/app/entrypoint.sh"]
 
-# Stage 5: Production stage
+# Stage 4: Production stage
 FROM base AS production
 
 # Build arguments for metadata
 ARG BUILD_DATE
 ARG VERSION=1.0.0
+ARG GITHUB_REPOSITORY=toosmooth/doogiebot
 
-# Add metadata with correct author information
+# Add metadata
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.authors="Mike Reeves" \
-      org.opencontainers.image.url="https://github.com/TOoSmOotH/DoogieBot" \
-      org.opencontainers.image.source="https://github.com/TOoSmOotH/DoogieBot" \
+      org.opencontainers.image.url="https://github.com/${GITHUB_REPOSITORY}" \
+      org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.vendor="TOoSmOotH" \
       org.opencontainers.image.title="DoogieBot" \
-      org.opencontainers.image.description="DoogieBot"
+      org.opencontainers.image.description="DoogieBot - An intelligent chat platform"
 
 # Set working directory
 WORKDIR /app
 
-# Install Node.js and pnpm
-RUN apt-get update && \
-    apt-get install -y nodejs npm && \
+# Install Node.js using nvm
+RUN apt-get update && apt-get install -y curl && \
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash && \
+    export NVM_DIR="$HOME/.nvm" && \
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && \
+    nvm install 22 && \
+    nvm use 22 && \
     npm install -g pnpm && \
+    echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc && \
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc && \
+    echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> ~/.bashrc && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create virtual environment and install dependencies with UV
+# Add node and npm to PATH
+ENV PATH="/root/.nvm/versions/node/v22.0.0/bin:${PATH}"
+
+# Create virtual environment
 RUN uv venv /app/.venv && \
     mkdir -p /app/backend
 
-# Copy pyproject.toml AND specific backend source code first
+# Copy backend code
 COPY backend/pyproject.toml /app/backend/
 COPY backend/app /app/backend/app
 COPY backend/main.py /app/backend/main.py
 COPY backend/alembic.ini /app/backend/alembic.ini
 COPY backend/alembic /app/backend/alembic
-# Add any other necessary top-level files/dirs from backend/ here if needed
 
-# Install dependencies with UV
+# Install backend dependencies
 RUN cd /app/backend && \
     uv pip install -e .
 
@@ -251,19 +208,11 @@ COPY --from=frontend-builder /app/frontend/public /app/frontend/public
 COPY --from=frontend-builder /app/frontend/node_modules /app/frontend/node_modules
 COPY frontend/package.json frontend/next.config.js /app/frontend/
 
-# Backend code already copied, just set ownership
-# COPY backend/ /app/backend/ # Removed redundant copy
-RUN chown -R ${USER_ID}:${GROUP_ID} /app/backend
-
-# Copy entrypoint scripts
+# Copy entrypoint script
 COPY entrypoint.prod.sh /app/
-RUN chmod +x /app/entrypoint.prod.sh && \
-    chown ${USER_ID}:${GROUP_ID} /app/entrypoint.prod.sh
+RUN chmod +x /app/entrypoint.prod.sh
 
-# Ensure frontend build files have correct ownership
-RUN chown -R ${USER_ID}:${GROUP_ID} /app/frontend/.next && \
-    chown -R ${USER_ID}:${GROUP_ID} /app/frontend/public && \
-    chown -R ${USER_ID}:${GROUP_ID} /app/frontend/node_modules
+# Ownership is handled by running as root, no chown needed
 
 # Environment variables for production
 ENV NODE_ENV=production \
@@ -277,8 +226,9 @@ HEALTHCHECK --interval=5m --timeout=3s \
 # Expose ports
 EXPOSE 3000 8000
 
-# Switch to configured user
-USER ${USER_ID}:${GROUP_ID}
+
+# Run as root to allow Docker socket access
+# USER ${USER_ID}:${GROUP_ID} # Removed to run as root
 
 # Run the application
 ENTRYPOINT ["/app/entrypoint.prod.sh"]

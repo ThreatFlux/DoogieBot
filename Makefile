@@ -17,7 +17,7 @@ BACKEND_TEST = $(UV_RUN) pytest
 BACKEND_SECURITY_CHECK = $(UV_RUN) bandit
 
 # Docker settings
-IMAGE_NAME = doogie-chat
+IMAGE_NAME = ghcr.io/toosmooth/doogiebot
 CONTAINER_NAME = doogie-chat-container
 DOCKER_COMPOSE = docker compose
 BUILD_ENV =
@@ -74,7 +74,7 @@ help:
 	@echo " ${GREEN}docker-test${NC}     : Run tests in Docker container"
 	@echo " ${GREEN}security-check${NC}  : Run security checks locally using virtual environment"
 	@echo " ${GREEN}docker-security${NC} : Run security checks in Docker container"
-	@echo " ${GREEN}docker-build${NC}    : Build Docker image"
+	@echo " ${GREEN}docker-build${NC}    : Build a fresh Docker image with no-cache and tag it as ${IMAGE_NAME}:latest"
 	@echo " ${GREEN}docker-up${NC}       : Start Docker container in development mode"
 	@echo " ${GREEN}docker-up-prod${NC}  : Start Docker container in production mode"
 	@echo " ${GREEN}docker-down${NC}     : Stop Docker container"
@@ -121,14 +121,15 @@ install:
 	cd frontend && pnpm install
 
 	@echo "${GREEN}Installation complete.${NC}"
-# Docker builds
+
+# Docker builds - builds the image locally with no-cache and tags it
 docker-build:
-	@echo "${YELLOW}Building Docker image...${NC}"
-	$(DOCKER_COMPOSE) build $(BUILD_ENV)
-	@echo "${GREEN}Docker build complete.${NC}"
+	@echo "${YELLOW}Building fresh ${IMAGE_NAME} image with no cache...${NC}"
+	docker build --no-cache -t ${IMAGE_NAME}:latest -f Dockerfile .
+	@echo "${GREEN}Docker image built and tagged as ${IMAGE_NAME}:latest.${NC}"
 
 # Start development environment
-dev: clean docker-up # Added clean target
+dev: clean docker-up
 
 # Start Docker in development mode
 docker-up:
@@ -216,7 +217,7 @@ docker-security:
 # Run database migrations
 migrate:
 	@echo "${YELLOW}Running database migrations...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run alembic upgrade head" # Changed command
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run alembic upgrade head"
 	@echo "${GREEN}Migrations complete.${NC}"
 
 # Build frontend for production
@@ -256,10 +257,10 @@ debug:
 	@python3 -m http.server 8888 & export HTTP_PID=$$!; \
 	trap 'echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"; kill $$HTTP_PID || true' EXIT; \
 	echo "Local HTTP server started with PID: $$HTTP_PID"
-	@echo "${YELLOW}Building and starting Docker container...${NC}"
-	$(DOCKER_COMPOSE) up -d --build
-	@echo "${YELLOW}Waiting 30 seconds for services to initialize...${NC}"
-	@sleep 30
+	@echo "${YELLOW}Starting Docker container with local image...${NC}"
+	$(DOCKER_COMPOSE) up -d
+	@echo "${YELLOW}Waiting 60 seconds for services to initialize...${NC}"
+	@sleep 60
 	@echo "${YELLOW}Checking logs for server readiness...${NC}"
 	@if $(DOCKER_COMPOSE) logs app | grep -q "Uvicorn running"; then \
 		echo "${GREEN}Server seems ready. Running fetch tool test against local server...${NC}"; \
@@ -271,7 +272,7 @@ debug:
 		exit 1; \
 	fi
 	@echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"
-	@kill $$HTTP_PID || true # Ensure server is stopped
+	@kill $$HTTP_PID || true
 	@echo "${YELLOW}Displaying recent logs...${NC}"
-	@$(DOCKER_COMPOSE) logs app --since 5m || true # Display logs, ignore errors if container stopped
+	@$(DOCKER_COMPOSE) logs app --since 5m || true
 	@echo "${GREEN}Debug sequence complete.${NC}"
