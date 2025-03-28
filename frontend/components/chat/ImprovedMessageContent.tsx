@@ -143,32 +143,58 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
     };
   }, [showActionsOnMobile]);
 
-  // Copy content to clipboard
-  const copyToClipboard = async (text: string, index: number) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedIndex(index);
-      showNotification('Copied to clipboard!', 'success');
-      
-      // Reset copy state after 2 seconds
-      setTimeout(() => {
-        setCopiedIndex(null);
-      }, 2000);
-      
-      return true;
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
-      showNotification('Failed to copy to clipboard', 'error');
-      return false;
-    }
-  };
-
-  // Copy the entire message content
-  const copyMessageContent = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the message click
-    copyToClipboard(content, -1);
-  };
-
+  
+    // Copy content to clipboard with fallback for insecure contexts
+    const copyToClipboard = async (text: string, index: number) => {
+      let success = false;
+      try {
+        // Try modern clipboard API first (requires secure context)
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          success = true;
+        } else {
+          // Fallback for insecure contexts or older browsers
+          const textArea = document.createElement('textarea');
+          textArea.value = text;
+          textArea.style.position = 'fixed'; // Prevent scrolling to bottom
+          textArea.style.left = '-9999px';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          try {
+            success = document.execCommand('copy');
+          } catch (err) {
+            console.error('Fallback copy failed:', err);
+            success = false;
+          }
+          document.body.removeChild(textArea);
+        }
+  
+        if (success) {
+          setCopiedIndex(index);
+          showNotification('Copied to clipboard!', 'success');
+          // Reset copy state after 2 seconds
+          setTimeout(() => {
+            setCopiedIndex(null);
+          }, 2000);
+        } else {
+          throw new Error('Copy command was not successful.');
+        }
+        
+        return success;
+      } catch (error) {
+        console.error('Failed to copy to clipboard:', error);
+        showNotification('Failed to copy to clipboard', 'error');
+        return false;
+      }
+    }; // End of copyToClipboard
+  
+    // Copy the entire message content
+    const copyMessageContent = (e: React.MouseEvent) => { // Restore function definition and parameter
+      e.stopPropagation(); // Prevent triggering the message click
+      copyToClipboard(content, -1);
+    }; // End of copyMessageContent
+  
   // Format the creation date for tooltip display
   const formattedDate = message.created_at 
     ? new Date(message.created_at).toLocaleString()
@@ -399,8 +425,12 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
             <div className="flex space-x-1">
               {/* Thumbs Up Button */}
               <button
-                onClick={() => onFeedback && onFeedback(String(message.id), 'positive')} // Add onClick for positive feedback
-                className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-green-100 dark:hover:bg-green-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
+                onClick={() => { if (onFeedback) onFeedback(String(message.id), 'positive'); }} // Call onFeedback prop
+                className={`p-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-green-100 dark:hover:bg-green-900 ${
+                  message.feedback === 'positive'
+                    ? 'bg-green-500 text-white' // Highlighted state
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300' // Default state
+                }`}
                 aria-label="Thumbs up"
                 title="Thumbs up"
               >
@@ -411,7 +441,11 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
               {/* Thumbs Down Button */}
               <button
                 onClick={handleNegativeFeedbackClick} // Use the new handler
-                className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
+                className={`p-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-red-100 dark:hover:bg-red-900 ${
+                  message.feedback === 'negative'
+                    ? 'bg-red-500 text-white' // Highlighted state
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300' // Default state
+                }`}
                 aria-label="Thumbs down"
                 title="Thumbs down"
               >
