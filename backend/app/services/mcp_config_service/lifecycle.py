@@ -3,6 +3,7 @@
 Functions for managing the lifecycle (start, stop, restart) of MCP server containers.
 """
 import logging
+import time # Added import
 from typing import Optional, List
 
 from sqlalchemy.orm import Session
@@ -61,7 +62,9 @@ def start_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
                             run_options.append(docker_args[current_index]); current_index += 1
                     else: image = arg; command_parts = docker_args[current_index + 1:]; break
                 if image is None: raise ValueError("Cannot parse Docker image from arguments")
+                # --- FIX: Ensure command_to_run is correctly set without -v ---
                 command_to_run = command_parts if command_parts else None
+                # --- End FIX ---
                 # --- End Parsing Logic ---
 
                 # --- Map run_options to docker-py kwargs ---
@@ -72,7 +75,9 @@ def start_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
                     if opt == '-i': run_kwargs['stdin_open'] = True; i += 1
                     elif opt == '-t': run_kwargs['tty'] = True; i += 1
                     elif opt == '-d': run_kwargs['detach'] = True; i += 1
+                    # --- FIX: Restore --rm mapping ---
                     elif opt == '--rm': run_kwargs['auto_remove'] = True; i += 1
+                    # --- End FIX ---
                     elif opt == '--init': run_kwargs['init'] = True; i += 1
                     elif opt == '--privileged': run_kwargs['privileged'] = True; i += 1
                     elif opt == '-p' and i + 1 < len(run_options):
@@ -150,11 +155,12 @@ def start_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
                  logger.error(f"Docker API error during start/create: {e}"); raise
         return get_config_status(db, config_id)
     except Exception as e:
-        logger.error(f"Error starting MCP server: {e}")
+        logger.exception(f"Error starting MCP server: {e}") # Use exception for full traceback
         config_name = db_config.name if db_config else "Unknown";
         config_enabled = db_config.config.get("enabled", False) if db_config else False
         return MCPServerStatus(id=config_id, name=config_name, enabled=config_enabled, status="error", error_message=str(e))
 
+# --- Corrected stop_server function ---
 def stop_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
     """ Stop an MCP server Docker container. """
     db_config = get_config_by_id(db, config_id)
@@ -167,24 +173,57 @@ def stop_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
             if containers:
                 container = containers[0]
                 if container.status == "running":
-                    try: container.stop(timeout=10); logger.info(f"Stopped MCP container: {container_name}")
-                    except APIError as stop_error: logger.error(f"Failed to stop container {container_name}: {stop_error}"); raise stop_error
+                    try:
+                        container.stop(timeout=10)
+                        logger.info(f"Stopped MCP container: {container_name}")
+                    except APIError as stop_error:
+                        logger.error(f"Failed to stop container {container_name}: {stop_error}")
+                        raise stop_error # Re-raise if stop fails critically
+
+                # --- FIX: Only remove if AutoRemove is not set ---
                 if not container.attrs.get('HostConfig', {}).get('AutoRemove', False):
-                     try: container.remove(); logger.info(f"Removed stopped MCP container: {container_name}")
-                     except APIError as remove_error:
-                         if remove_error.response.status_code == 409 and 'removal in progress' in remove_error.explanation.lower(): logger.info(f"Container {container_name} already being removed.")
-                         else: logger.error(f"Failed to remove container {container_name}: {remove_error}")
-        except DockerNotFound: logger.info(f"Container {container_name} not found, nothing to stop.")
-        except APIError as e: logger.error(f"Docker API error during stop: {e}"); raise
+                    try:
+                        container.remove()
+                        logger.info(f"Removed stopped MCP container (AutoRemove=False): {container_name}")
+                    except APIError as remove_error:
+                        # Handle cases where removal is already in progress or container is gone
+                        if remove_error.response.status_code == 409 and 'removal in progress' in str(remove_error.explanation).lower():
+                            logger.info(f"Container {container_name} already being removed.")
+                        elif remove_error.response.status_code == 404:
+                            logger.info(f"Container {container_name} already removed (404 on remove attempt).")
+                        else:
+                            logger.error(f"Failed to remove container {container_name}: {remove_error}")
+                            # Don't raise here for remove error, just log it
+                else:
+                    logger.info(f"Container {container_name} has AutoRemove=True, skipping explicit removal.")
+                # --- End FIX ---
+
+        except DockerNotFound:
+            logger.info(f"Container {container_name} not found, nothing to stop/remove.")
+        except APIError as e:
+            logger.error(f"Docker API error during stop/remove: {e}")
+            raise # Re-raise other API errors
+
+        # Return the status after attempting stop/remove
         return get_config_status(db, config_id)
+
     except Exception as e:
-        logger.error(f"Error stopping MCP server: {e}")
+        logger.exception(f"Error stopping MCP server: {e}") # Use exception
         return MCPServerStatus(id=config_id, name=db_config.name, enabled=db_config.config.get("enabled", False), status="error", error_message=str(e))
+# --- End corrected stop_server function ---
 
 def restart_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
     """ Restart an MCP server Docker container. """
+    logger.info(f"Attempting to restart server {config_id}")
     stop_result = stop_server(db, config_id)
+    # Add a small delay to allow Docker daemon to fully process removal if needed
+    time.sleep(1)
     current_status = get_config_status(db, config_id)
     if current_status and current_status.status == "running":
-         logger.warning(f"Server {config_id} did not stop cleanly, current status: {current_status.status}. Attempting start anyway.")
+         logger.warning(f"Server {config_id} did not stop cleanly before restart attempt, current status: {current_status.status}. Attempting start anyway.")
+    elif current_status and current_status.status != "stopped":
+         logger.warning(f"Server {config_id} in unexpected state '{current_status.status}' before restart attempt. Attempting start anyway.")
+    else:
+        logger.info(f"Server {config_id} stopped cleanly (or was not found). Proceeding with start.")
+
     return start_server(db, config_id)

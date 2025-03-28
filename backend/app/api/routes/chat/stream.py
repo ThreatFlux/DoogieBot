@@ -147,7 +147,7 @@ async def handle_stream_completion(state: Dict[str, Any]):
                         tool_execution_tasks.append(
                             asyncio.to_thread(
                                 execute_mcp_tool, # Use imported function
-                                db=db, # Use the background task's session
+                                # db=db, # Let execute_mcp_tool handle session creation
                                 config_id=config_id, tool_call_id=tool_call_id,
                                 tool_name=full_tool_name, arguments_str=arguments_str
                             )
@@ -244,13 +244,20 @@ async def handle_stream_completion(state: Dict[str, Any]):
         second_finish_reason = second_response.get("finish_reason")
 
         if second_full_content:
-             logger.debug(f"Saving final message after tool execution for chat {chat_id} (background).")
-             ChatService.add_message(
-                 db, chat_id, "assistant", second_full_content,
-                 tokens=second_total_tokens, prompt_tokens=second_prompt_tokens, completion_tokens=second_completion_tokens,
-                 model=current_model, provider=current_provider, # Use model/provider from first call? Or second?
-                 finish_reason=second_finish_reason
-             )
+             logger.debug(f"Attempting to save final message after tool execution for chat {chat_id} (background).")
+             try:
+                 saved_final_msg = ChatService.add_message(
+                     db, chat_id, "assistant", second_full_content,
+                     tokens=second_total_tokens, prompt_tokens=second_prompt_tokens, completion_tokens=second_completion_tokens,
+                     model=current_model, provider=current_provider, # Use model/provider from first call? Or second?
+                     finish_reason=second_finish_reason
+                 )
+                 if saved_final_msg and saved_final_msg.id:
+                      logger.info(f"Successfully saved final assistant message (ID: {saved_final_msg.id}) after tool execution for chat {chat_id} (background).")
+                 else:
+                      logger.error(f"Failed to save final assistant message after tool execution for chat {chat_id} (add_message returned None or no ID).")
+             except Exception as final_save_err:
+                  logger.exception(f"Error saving final assistant message after tool execution for chat {chat_id}: {final_save_err}")
         else:
             logger.warning("Second LLM call after tool execution resulted in no content (background).")
 

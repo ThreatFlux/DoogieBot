@@ -14,6 +14,9 @@ from app.rag.singleton import rag_singleton
 from app.utils.middleware import TrailingSlashMiddleware
 from contextlib import asynccontextmanager
 
+# Setup logger
+logger = logging.getLogger(__name__)
+
 # Create the app directory if it doesn't exist
 app_dir = Path(__file__).parent / "app"
 app_dir.mkdir(exist_ok=True)
@@ -125,26 +128,29 @@ async def lifespan(app: FastAPI):
     try:
         # Import functions directly from the new package
         from app.services.mcp_config_service import get_all_enabled_configs, start_server
-        print("Checking for enabled MCP servers to start...")
+        logger.info("Checking for enabled MCP servers to start...") # Use logger
         # Use the new method to get only enabled configs
         enabled_mcp_configs = get_all_enabled_configs(db) # Call function directly
+        logger.info(f"Found {len(enabled_mcp_configs)} enabled MCP configurations.") # Use logger
         started_count = 0
         # Iterate through only the enabled configs
         for config in enabled_mcp_configs:
             # No need to check 'enabled' again here
-            print(f"Attempting to start enabled MCP server: {config.name} (ID: {config.id})")
+            logger.info(f"Attempting to start enabled MCP server: {config.name} (ID: {config.id})") # Use logger
             try:
                 status = start_server(db, config.id) # Call function directly
                 if status and status.status == "running":
-                    print(f"Successfully started/verified MCP server: {config.name}")
+                    logger.info(f"Successfully started/verified MCP server: {config.name}") # Use logger
                     started_count += 1
                 else:
-                    print(f"Failed to start MCP server {config.name}. Status: {status.status if status else 'Unknown'}, Error: {status.error_message if status else 'N/A'}")
+                    error_msg = status.error_message if status else 'N/A'
+                    status_msg = status.status if status else 'Unknown'
+                    logger.error(f"Failed to start MCP server {config.name}. Status: {status_msg}, Error: {error_msg}") # Use logger
             except Exception as mcp_start_err:
-                print(f"Error attempting to start MCP server {config.name}: {mcp_start_err}")
-        print(f"Finished MCP server startup check. Started/Verified {started_count} servers.")
+                logger.exception(f"Error attempting to start MCP server {config.name}: {mcp_start_err}") # Use logger with exception info
+        logger.info(f"Finished MCP server startup check. Started/Verified {started_count} servers.") # Use logger
     except Exception as e:
-        print(f"Error during MCP server startup check: {e}")
+        logger.exception(f"Error during MCP server startup check: {e}") # Use logger with exception info
     finally:
         db.close() # Ensure the session used for startup is closed
     # --- End MCP server startup ---
