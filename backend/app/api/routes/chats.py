@@ -74,7 +74,7 @@ async def get_flagged_chats(
         "pages": (total + limit - 1) // limit if limit > 0 else 1
     }
 
-@router.get("/admin/feedback", response_model=PaginatedMessageResponse) # Update response model
+@router.get("/admin/feedback") # REMOVED response_model, will construct manually
 def read_feedback_messages(
     db: Session = Depends(get_db),
     feedback_type: str = None,
@@ -90,13 +90,36 @@ def read_feedback_messages(
         db, feedback_type, reviewed, skip=skip, limit=limit # Pass skip and limit
     )
     
-    # Construct paginated response
+    # Manually construct response items to include related_question_content
+    response_items = []
+    for msg in messages:
+        related_content = None
+        if hasattr(msg, 'related_question') and msg.related_question:
+            related_content = msg.related_question.content
+            
+        response_items.append({
+            "id": msg.id,
+            "chat_id": msg.chat_id,
+            "role": msg.role,
+            "content": msg.content,
+            "created_at": msg.created_at.isoformat(), # Ensure ISO format for JSON
+            "tokens": msg.tokens,
+            "tokens_per_second": msg.tokens_per_second,
+            "model": msg.model,
+            "provider": msg.provider,
+            "feedback": msg.feedback,
+            "feedback_text": msg.feedback_text,
+            "reviewed": msg.reviewed,
+            "context_documents": msg.context_documents, # Assuming this is already JSON serializable
+            "related_question_content": related_content
+        })
+        
+    # Construct final paginated response
     page = skip // limit + 1 if limit > 0 else 1
     pages = (total + limit - 1) // limit if limit > 0 else 1
     
-    # Let FastAPI handle serialization using the response_model and from_attributes=True
     return {
-        "items": messages, # Return the list of SQLAlchemy Message objects directly
+        "items": response_items, # Use the manually constructed list
         "total": total,
         "page": page,
         "size": limit,

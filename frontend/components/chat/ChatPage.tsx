@@ -94,6 +94,7 @@ export const CleanChatPage = () => {
 
   const {
     isStreaming,
+    isWaitingForResponse, // Get new state from hook
     error: errorMessages,
     messagesEndRef,
     handleSendMessage,
@@ -291,6 +292,7 @@ export const CleanChatPage = () => {
                     onUpdateMessage={handleUpdateMessage} // From useChatMessages
                     // Pass feedback handler if needed by ImprovedMessageContent
                     onFeedback={handleFeedback} // Pass the feedback handler
+                    isWaitingForResponse={isWaitingForResponse && message.role === 'assistant' && !message.content} // Pass waiting state only for the empty assistant placeholder
                   />
 
                   {message.role === 'assistant' && message.document_ids && message.document_ids.length > 0 && (

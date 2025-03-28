@@ -71,6 +71,7 @@ export interface Message {
   reviewed?: boolean;
   context_documents?: string[];
   document_ids?: string[]; // Add this field for document references
+  related_question_content?: string; // Add field for related question content
 }
 
 export interface Feedback {
