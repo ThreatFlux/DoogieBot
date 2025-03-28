@@ -5,7 +5,7 @@ all: install lint test
 
 # Python settings
 UV = uv
-PYTHON_VERSION = 3.12
+PYTHON_VERSION = 3.13
 VENV = .venv
 UV_RUN = $(UV) run
 
@@ -17,10 +17,10 @@ BACKEND_TEST = $(UV_RUN) pytest
 BACKEND_SECURITY_CHECK = $(UV_RUN) bandit
 
 # Docker settings
-IMAGE_NAME = doogie-chat
+IMAGE_NAME = ghcr.io/toosmooth/doogiebot
 CONTAINER_NAME = doogie-chat-container
 DOCKER_COMPOSE = docker compose
-BUILD_ENV = 
+BUILD_ENV =
 
 # Version management
 VERSION = $(shell grep -m 1 version backend/pyproject.toml | cut -d'"' -f2)
@@ -74,7 +74,7 @@ help:
 	@echo " ${GREEN}docker-test${NC}     : Run tests in Docker container"
 	@echo " ${GREEN}security-check${NC}  : Run security checks locally using virtual environment"
 	@echo " ${GREEN}docker-security${NC} : Run security checks in Docker container"
-	@echo " ${GREEN}docker-build${NC}    : Build Docker image"
+	@echo " ${GREEN}docker-build${NC}    : Build a fresh Docker image with no-cache and tag it as ${IMAGE_NAME}:latest"
 	@echo " ${GREEN}docker-up${NC}       : Start Docker container in development mode"
 	@echo " ${GREEN}docker-up-prod${NC}  : Start Docker container in production mode"
 	@echo " ${GREEN}docker-down${NC}     : Stop Docker container"
@@ -111,24 +111,25 @@ sync:
 install:
 	@echo "${YELLOW}Setting up virtual environment...${NC}"
 	$(UV) venv --python $(PYTHON_VERSION)
-	
+
 	@echo "${YELLOW}Installing backend dependencies...${NC}"
 	cd backend && $(UV) pip install -e .
 	cd backend && $(UV) pip install -e ".[dev]"
-	
+
+
 	@echo "${YELLOW}Installing frontend dependencies...${NC}"
-	cd frontend && npm install
-	
+	cd frontend && pnpm install
+
 	@echo "${GREEN}Installation complete.${NC}"
 
-# Docker builds
+# Docker builds - builds the image locally with no-cache and tags it
 docker-build:
-	@echo "${YELLOW}Building Docker image...${NC}"
-	$(DOCKER_COMPOSE) build $(BUILD_ENV)
-	@echo "${GREEN}Docker build complete.${NC}"
+	@echo "${YELLOW}Building fresh ${IMAGE_NAME} image with no cache...${NC}"
+	docker build --no-cache -t ${IMAGE_NAME}:latest -f Dockerfile .
+	@echo "${GREEN}Docker image built and tagged as ${IMAGE_NAME}:latest.${NC}"
 
 # Start development environment
-dev: docker-up
+dev: clean docker-up
 
 # Start Docker in development mode
 docker-up:
@@ -159,7 +160,7 @@ lint:
 # Linting (Docker)
 docker-lint:
 	@echo "${YELLOW}Running backend linters in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pylint app --disable=C0111"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pylint app --disable=C0111,R0801"
 	@echo "${YELLOW}Running frontend linters in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm run lint"
 	@echo "${GREEN}Linting complete.${NC}"
@@ -195,7 +196,7 @@ test:
 # Testing (Docker)
 docker-test:
 	@echo "${YELLOW}Running tests in Docker...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pytest"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && source /app/.venv/bin/activate && uv pip install -e . && uv pip install pytest pytest-cov && python -m pytest"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm test"
 	@echo "${GREEN}Tests complete.${NC}"
 
@@ -216,7 +217,7 @@ docker-security:
 # Run database migrations
 migrate:
 	@echo "${YELLOW}Running database migrations...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && python -m alembic upgrade head"
+	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run alembic upgrade head"
 	@echo "${GREEN}Migrations complete.${NC}"
 
 # Build frontend for production
@@ -248,3 +249,30 @@ sync:
 	@read -p "Enter destination (e.g., user@server:/path/to/project): " destination; \
 	./sync-doogie.sh $$destination
 	@echo "${GREEN}Sync complete.${NC}"
+
+# Debug target to build, wait, check logs, and run fetch test with local server
+debug:
+	@echo "${YELLOW}Starting debug sequence...${NC}"
+	@echo "${YELLOW}Starting local HTTP server on port 8888...${NC}"
+	@python3 -m http.server 8888 & export HTTP_PID=$$!; \
+	trap 'echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"; kill $$HTTP_PID || true' EXIT; \
+	echo "Local HTTP server started with PID: $$HTTP_PID"
+	@echo "${YELLOW}Starting Docker container with local image...${NC}"
+	$(DOCKER_COMPOSE) up -d
+	@echo "${YELLOW}Waiting 60 seconds for services to initialize...${NC}"
+	@sleep 60
+	@echo "${YELLOW}Checking logs for server readiness...${NC}"
+	@if $(DOCKER_COMPOSE) logs app | grep -q "Uvicorn running"; then \
+		echo "${GREEN}Server seems ready. Running fetch tool test against local server...${NC}"; \
+		TEST_URL="http://host.docker.internal:8888/test.txt" ./backend/tests/test_fetch_tool.sh; \
+	else \
+		echo "${RED}Server did not start correctly. Displaying logs:${NC}"; \
+		$(DOCKER_COMPOSE) logs app; \
+		kill $$HTTP_PID || true; \
+		exit 1; \
+	fi
+	@echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"
+	@kill $$HTTP_PID || true
+	@echo "${YELLOW}Displaying recent logs...${NC}"
+	@$(DOCKER_COMPOSE) logs app --since 5m || true
+	@echo "${GREEN}Debug sequence complete.${NC}"

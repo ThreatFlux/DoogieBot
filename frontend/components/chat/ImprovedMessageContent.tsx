@@ -4,6 +4,7 @@ import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+// Removed duplicate Button import
 
 // Define a simple custom style to replace dracula
 const customDraculaStyle = {
@@ -79,7 +80,8 @@ const customDraculaStyle = {
 };
 import { Message } from '@/types';
 import { parseThinkTags } from '@/utils/thinkTagParser';
-import Tooltip from '@/components/ui/Tooltip';
+import { FeedbackType } from '@/components/chat/FeedbackButton'; // Import FeedbackType
+import Tooltip from '@/components/ui/CustomTooltip';
 import { useNotification } from '@/contexts/NotificationContext';
 import DocumentReferences from '@/components/chat/DocumentReferences';
 import MarkdownEditor from '@/components/chat/MarkdownEditor';
@@ -89,12 +91,14 @@ interface MessageContentProps {
   content: string;
   message: Message;
   onUpdateMessage?: (messageId: string, newContent: string) => Promise<boolean>;
+  onFeedback?: (messageId: string, feedbackType: FeedbackType, comment?: string) => Promise<void>; // Add onFeedback prop
 }
 
-const ImprovedMessageContent: React.FC<MessageContentProps> = ({ 
-  content, 
+const ImprovedMessageContent: React.FC<MessageContentProps> = ({
+  content,
   message,
-  onUpdateMessage 
+  onUpdateMessage,
+  onFeedback // Destructure onFeedback
 }) => {
   const [collapsedThinkTags, setCollapsedThinkTags] = useState<{[key: number]: boolean}>({});
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -103,8 +107,10 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const { showNotification } = useNotification();
+  const [showNegativeFeedbackInput, setShowNegativeFeedbackInput] = useState(false);
+  const [negativeFeedbackComment, setNegativeFeedbackComment] = useState('');
   const messageRef = useRef<HTMLDivElement>(null);
-  
+
   // Parse think tags using memoization to avoid unnecessary re-parsing
   const parts = useMemo(() => parseThinkTags(content), [content]);
 
@@ -192,6 +198,26 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Handle toggling the negative feedback input
+  const handleNegativeFeedbackClick = () => {
+    setShowNegativeFeedbackInput(!showNegativeFeedbackInput);
+    setNegativeFeedbackComment(''); // Clear comment on toggle
+  };
+
+  // Handle submitting the negative feedback comment
+  const submitNegativeFeedback = async () => {
+    if (onFeedback) {
+      try {
+        await onFeedback(String(message.id), 'negative', negativeFeedbackComment);
+        showNotification('Feedback submitted', 'success');
+      } catch (error) {
+        showNotification('Failed to submit feedback', 'error');
+      }
+    }
+    setShowNegativeFeedbackInput(false);
+    setNegativeFeedbackComment('');
   };
 
   // Info tooltip content
@@ -371,7 +397,9 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
           {/* Thumbs up/down buttons - Only show for assistant messages */}
           {message.role === 'assistant' && (
             <div className="flex space-x-1">
+              {/* Thumbs Up Button */}
               <button
+                onClick={() => onFeedback && onFeedback(String(message.id), 'positive')} // Add onClick for positive feedback
                 className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-green-100 dark:hover:bg-green-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
                 aria-label="Thumbs up"
                 title="Thumbs up"
@@ -380,7 +408,9 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
                 </svg>
               </button>
-              <button 
+              {/* Thumbs Down Button */}
+              <button
+                onClick={handleNegativeFeedbackClick} // Use the new handler
                 className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
                 aria-label="Thumbs down"
                 title="Thumbs down"
@@ -425,6 +455,31 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
             </button>
           )}
         </div>
+
+        {/* Negative Feedback Input Area */}
+        {showNegativeFeedbackInput && (
+          <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-700 animate-fade-in">
+            <label htmlFor={`feedback-comment-${message.id}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Why was this response unhelpful? (Optional)
+            </label>
+            <textarea
+              id={`feedback-comment-${message.id}`}
+              rows={3}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-200"
+              value={negativeFeedbackComment}
+              onChange={(e) => setNegativeFeedbackComment(e.target.value)}
+              placeholder="Provide details..."
+            />
+            <div className="mt-2 flex justify-end space-x-2">
+              <Button variant="outline" size="sm" onClick={handleNegativeFeedbackClick}>
+                Cancel
+              </Button>
+              <Button variant="destructive" size="sm" onClick={submitNegativeFeedback}>
+                Submit Feedback
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Expandable Info Section */}
         {isInfoExpanded && message.role !== 'user' && (

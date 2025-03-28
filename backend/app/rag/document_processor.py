@@ -8,7 +8,7 @@ from app.models.document import Document, DocumentChunk
 from app.services.document import DocumentService
 from app.rag.document_parser import DocumentParser
 from app.rag.document_chunker import DocumentChunker
-from app.services.llm import LLMService
+from app.services.llm_service import LLMService
 from app.core.config import settings
 
 # Set up logging

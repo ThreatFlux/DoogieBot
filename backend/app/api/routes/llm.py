@@ -7,7 +7,7 @@ import asyncio
 
 from app.db.base import get_db
 from app.models.user import User
-from app.services.llm import LLMService
+from app.services.llm_service import LLMService
 from app.services.llm_config import LLMConfigService
 from app.services.embedding_config import EmbeddingConfigService
 from app.services.reranking_config import RerankingConfigService

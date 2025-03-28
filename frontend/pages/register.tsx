@@ -5,6 +5,7 @@ import Layout from '@/components/layout/Layout';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNotification } from '@/contexts/NotificationContext'; // Import useNotification
 
 const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
@@ -20,8 +21,9 @@ const RegisterPage: React.FC = () => {
     password: false,
     confirmPassword: false,
   });
-  
+
   const { register, isAuthenticated } = useAuth();
+  const { showNotification } = useNotification(); // Get showNotification
   const router = useRouter();
 
   useEffect(() => {
@@ -76,8 +78,16 @@ const RegisterPage: React.FC = () => {
       // Note: The current register function only accepts email and password
       // If you want to include name, you would need to modify AuthContext
       const { success, error: registerError } = await register(email, password);
-      
-      if (!success) {
+
+      if (success) {
+        // Show success notification and redirect
+        showNotification(
+          'Registration successful! Your account is pending approval by an administrator.',
+          'success',
+          10000 // Show for 10 seconds
+        );
+        router.push('/login'); // Redirect to login page
+      } else {
         setError(registerError || 'Registration failed. Please try again.');
       }
     } catch (err) {

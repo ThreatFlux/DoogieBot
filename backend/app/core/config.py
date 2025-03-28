@@ -54,7 +54,7 @@ class Settings(BaseSettings):
         return v
     
     # Database settings
-    SQLITE_DATABASE_URL: str = "sqlite:///./doogie.db"
+    SQLITE_DATABASE_URL: str = "sqlite:///./db/doogie.db"
     
     # LLM service settings
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
