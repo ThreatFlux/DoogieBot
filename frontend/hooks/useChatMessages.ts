@@ -214,7 +214,18 @@ export const useChatMessages = (
         setIsStreaming(false);
         // Refresh the chat list to ensure title/timestamp updates are reflected
         loadChats();
-        // No need to refresh current chat here, local state is up-to-date
+        // Refresh the current chat to get final message IDs from the backend
+        if (currentChat?.id) {
+          getChat(currentChat.id).then(result => {
+            if (result.chat) {
+              console.log('Refreshed current chat with final message IDs:', result.chat.id);
+              setCurrentChat(result.chat);
+            } else {
+              console.error('Failed to refresh chat after streaming:', result.error);
+              showNotification(`Failed to refresh chat details: ${result.error}`, 'error');
+            }
+          });
+        }
         showNotification('Response completed successfully', 'success');
         announce({ message: 'Response completed successfully', politeness: 'polite' });
       }
