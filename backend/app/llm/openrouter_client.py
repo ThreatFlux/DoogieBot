@@ -23,13 +23,15 @@ class OpenRouterClient(LLMClient):
         model: str = "openai/gpt-3.5-turbo",
         api_key: Optional[str] = None,
         base_url: Optional[str] = "https://openrouter.ai/api", # Base URL is managed internally now
-        embedding_model: Optional[str] = None
+        embedding_model: Optional[str] = None,
+        user_id: Optional[str] = None # Add user_id parameter
     ):
         """
         Initialize the OpenRouter client.
         """
         # OpenRouter base URL is fixed
-        super().__init__(model, api_key, "https://openrouter.ai/api/v1", embedding_model)
+        # Pass user_id to base class constructor
+        super().__init__(model, api_key, "https://openrouter.ai/api/v1", embedding_model, user_id=user_id)
         self._current_reasoning = ""
         self._has_reasoning = False
         self.api_key = api_key or settings.OPENROUTER_API_KEY

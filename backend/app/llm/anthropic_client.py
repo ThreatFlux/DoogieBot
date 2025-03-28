@@ -34,9 +34,11 @@ class AnthropicClient(LLMClient):
         model: str,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None, # Anthropic doesn't typically use base_url
-        embedding_model: Optional[str] = None
+        embedding_model: Optional[str] = None,
+        user_id: Optional[str] = None # Add user_id parameter
     ):
-        super().__init__(model=model, api_key=api_key, base_url=base_url, embedding_model=embedding_model)
+        # Pass user_id to base class constructor
+        super().__init__(model=model, api_key=api_key, base_url=base_url, embedding_model=embedding_model, user_id=user_id)
         if not self.api_key:
             raise ValueError("Anthropic API key is required.")
 

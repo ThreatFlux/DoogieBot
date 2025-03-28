@@ -248,3 +248,30 @@ sync:
 	@read -p "Enter destination (e.g., user@server:/path/to/project): " destination; \
 	./sync-doogie.sh $$destination
 	@echo "${GREEN}Sync complete.${NC}"
+
+# Debug target to build, wait, check logs, and run fetch test with local server
+debug:
+	@echo "${YELLOW}Starting debug sequence...${NC}"
+	@echo "${YELLOW}Starting local HTTP server on port 8888...${NC}"
+	@python3 -m http.server 8888 & export HTTP_PID=$$!; \
+	trap 'echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"; kill $$HTTP_PID || true' EXIT; \
+	echo "Local HTTP server started with PID: $$HTTP_PID"
+	@echo "${YELLOW}Building and starting Docker container...${NC}"
+	$(DOCKER_COMPOSE) up -d --build
+	@echo "${YELLOW}Waiting 30 seconds for services to initialize...${NC}"
+	@sleep 30
+	@echo "${YELLOW}Checking logs for server readiness...${NC}"
+	@if $(DOCKER_COMPOSE) logs app | grep -q "Uvicorn running"; then \
+		echo "${GREEN}Server seems ready. Running fetch tool test against local server...${NC}"; \
+		TEST_URL="http://host.docker.internal:8888/test.txt" ./backend/tests/test_fetch_tool.sh; \
+	else \
+		echo "${RED}Server did not start correctly. Displaying logs:${NC}"; \
+		$(DOCKER_COMPOSE) logs app; \
+		kill $$HTTP_PID || true; \
+		exit 1; \
+	fi
+	@echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"
+	@kill $$HTTP_PID || true # Ensure server is stopped
+	@echo "${YELLOW}Displaying recent logs...${NC}"
+	@$(DOCKER_COMPOSE) logs app --since 5m || true # Display logs, ignore errors if container stopped
+	@echo "${GREEN}Debug sequence complete.${NC}"

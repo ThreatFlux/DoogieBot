@@ -17,7 +17,8 @@ class LLMClient(ABC):
         model: str,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        embedding_model: Optional[str] = None
+        embedding_model: Optional[str] = None,
+        user_id: Optional[str] = None # Add user_id parameter
     ):
         """
         Initialize the LLM client.
@@ -32,6 +33,7 @@ class LLMClient(ABC):
         self.embedding_model = embedding_model or model  # Use chat model for embeddings if not specified
         self.api_key = api_key
         self.base_url = base_url
+        self.user_id = user_id # Store user_id
 
     @abstractmethod
     async def generate(

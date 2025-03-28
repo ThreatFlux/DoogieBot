@@ -115,6 +115,7 @@ class ChatService:
         if chat:
             chat.updated_at = current_time
 
+        db.flush() # Flush to ensure message ID is assigned before commit
         db.commit()
         db.refresh(message)
         return message

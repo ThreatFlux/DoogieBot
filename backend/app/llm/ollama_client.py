@@ -23,12 +23,14 @@ class OllamaClient(LLMClient):
         model: str = "llama2",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        embedding_model: Optional[str] = None
+        embedding_model: Optional[str] = None,
+        user_id: Optional[str] = None # Add user_id parameter
     ):
         """
         Initialize the Ollama client.
         """
-        super().__init__(model=model, api_key=api_key, base_url=base_url, embedding_model=embedding_model)
+        # Pass user_id to base class constructor
+        super().__init__(model=model, api_key=api_key, base_url=base_url, embedding_model=embedding_model, user_id=user_id)
         self.base_url = base_url or settings.OLLAMA_BASE_URL
         if not self.base_url:
             logger.warning("Ollama base URL is not set. API calls will likely fail.")
@@ -63,7 +65,7 @@ class OllamaClient(LLMClient):
                          "role": "tool",
                          "content": content, # Ollama expects content string for tool result
                          # Include tool_call_id if the model supports it (newer Ollama versions)
-                         # "tool_call_id": tool_call_id
+                         "tool_call_id": tool_call_id
                      })
                  else:
                       logger.warning(f"Skipping tool message due to missing content or tool_call_id: {msg}")
@@ -190,18 +192,30 @@ class OllamaClient(LLMClient):
                             has_update = True
 
                         if delta_tool_calls:
-                            # Assume Ollama sends the full tool_calls array in one chunk
-                            logger.info(f"Ollama stream received tool calls chunk: {delta_tool_calls}")
-                            accumulated_tool_calls = delta_tool_calls
-                            # Yield the full tool calls array as a delta (mimicking OpenAI structure)
-                            # We might need a more granular delta structure if Ollama streams parts
-                            yield_chunk["tool_calls_delta"] = [{
-                                "index": i,
-                                "id": call.get("id", f"call_{uuid.uuid4()}"), # Generate ID if missing
-                                "type": "function",
-                                "function": call.get("function", {})
-                            } for i, call in enumerate(delta_tool_calls)]
-                            finish_reason = "tool_calls"
+                            # Handle potentially incremental tool calls from Ollama stream
+                            logger.debug(f"Ollama stream received tool calls delta: {delta_tool_calls}")
+                            yield_chunk["tool_calls_delta"] = delta_tool_calls # Pass delta through
+                            
+                            # Accumulate tool calls similar to llm_stream.py
+                            for tool_call_delta in delta_tool_calls:
+                                index = tool_call_delta.get("index")
+                                if index is None: continue
+                                if index not in accumulated_tool_calls:
+                                    # Initialize structure if index is new
+                                    accumulated_tool_calls.append({"id": None, "type": "function", "function": {"name": None, "arguments": ""}})
+                                
+                                # Ensure list is long enough (shouldn't happen if index is sequential, but safety check)
+                                while len(accumulated_tool_calls) <= index:
+                                     accumulated_tool_calls.append({"id": None, "type": "function", "function": {"name": None, "arguments": ""}})
+
+                                call_part = accumulated_tool_calls[index]
+                                if tool_call_delta.get("id"): call_part["id"] = tool_call_delta["id"]
+                                if tool_call_delta.get("type"): call_part["type"] = tool_call_delta["type"]
+                                func_delta = tool_call_delta.get("function", {})
+                                if func_delta.get("name"): call_part["function"]["name"] = func_delta["name"]
+                                if func_delta.get("arguments"): call_part["function"]["arguments"] += func_delta["arguments"]
+                                
+                            finish_reason = "tool_calls" # Mark that tools were involved
                             has_update = True
 
                         if has_update:

@@ -23,12 +23,14 @@ class OpenAIClient(LLMClient):
         model: str = "gpt-3.5-turbo",
         api_key: Optional[str] = None,
         base_url: Optional[str] = "https://api.openai.com/v1",
-        embedding_model: Optional[str] = None
+        embedding_model: Optional[str] = None,
+        user_id: Optional[str] = None # Add user_id parameter
     ):
         """
         Initialize the OpenAI client.
         """
-        super().__init__(model, api_key, base_url, embedding_model)
+        # Pass user_id to base class constructor
+        super().__init__(model, api_key, base_url, embedding_model, user_id=user_id)
         self.api_key = api_key or settings.OPENAI_API_KEY
         if not self.api_key:
             raise ValueError("OpenAI API key is required")

@@ -16,7 +16,8 @@ from app.services.chat import ChatService
 from app.services.llm_config import LLMConfigService
 from app.services.embedding_config import EmbeddingConfigService
 from app.services.reranking_config import RerankingConfigService
-from app.services.mcp_config_service import MCPConfigService # <-- Import MCP Service
+# Import specific functions from the new MCP package
+from app.services.mcp_config_service import get_configs_by_user, execute_mcp_tool
 from app.rag.hybrid_retriever import HybridRetriever
 from app.core.config import settings
 # Import the extracted functions
@@ -30,105 +31,53 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_TURNS = 5 # Maximum number of LLM <-> Tool execution cycles per user message
 
-# --- Define Schemas for Connected Servers ---
-# Schemas based on the persona context for connected MCP servers
-CONNECTED_SERVER_SCHEMAS = {
-    "filesystem": {
-        "read_file": {
-            "description": "Read the complete contents of a file from the file system.",
-            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
-        },
-        "write_file": {
-            "description": "Create or overwrite a file with new content.",
-            "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}
-        },
-        "list_directory": {
-            "description": "Get a detailed listing of files and directories.",
-            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
-        },
-        # Add other filesystem tools if needed (edit_file, create_directory, etc.)
-    },
-    "puppeteer": {
-         "puppeteer_navigate": {
-            "description": "Navigate to a URL",
-            "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}
-        },
-         "puppeteer_screenshot": {
-            "description": "Take a screenshot",
-            "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "selector": {"type": "string"}, "width": {"type": "number"}, "height": {"type": "number"}}, "required": ["name"]}
-        },
-         "puppeteer_click": {
-            "description": "Click an element",
-            "parameters": {"type": "object", "properties": {"selector": {"type": "string"}}, "required": ["selector"]}
-        },
-         "puppeteer_fill": {
-            "description": "Fill an input field",
-            "parameters": {"type": "object", "properties": {"selector": {"type": "string"}, "value": {"type": "string"}}, "required": ["selector", "value"]}
-        },
-        # Add other puppeteer tools...
-    },
-    "github": {
-        "get_file_contents": {
-            "description": "Get the contents of a file or directory from a GitHub repository.",
-            "parameters": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}, "path": {"type": "string"}, "branch": {"type": "string"}}, "required": ["owner", "repo", "path"]}
-        },
-        "search_repositories": {
-            "description": "Search for GitHub repositories.",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "page": {"type": "number"}, "perPage": {"type": "number"}}, "required": ["query"]}
-        },
-        "create_issue": {
-            "description": "Create a new issue in a GitHub repository.",
-            "parameters": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "labels": {"type": "array", "items": {"type": "string"}}}, "required": ["owner", "repo", "title"]}
-        },
-        # Add other github tools...
-    },
-    "kubernetes": {
-         "list_pods": {
-            "description": "List pods in a namespace.",
-            "parameters": {"type": "object", "properties": {"namespace": {"type": "string", "default": "default"}}, "required": ["namespace"]}
-        },
-         "get_logs": {
-            "description": "Get logs from pods, deployments, or jobs.",
-            "parameters": {"type": "object", "properties": {"resourceType": {"type": "string", "enum": ["pod", "deployment", "job"]}, "name": {"type": "string"}, "namespace": {"type": "string", "default": "default"}, "container": {"type": "string"}, "tail": {"type": "number"}}, "required": ["resourceType", "name"]}
-        },
-        # Add other kubernetes tools...
-    },
-    "fetch": {
-        "fetch": {
+# --- Define KNOWN Schemas for specific MCP Servers ---
+# Used for servers that don't support dynamic mcp.describe
+KNOWN_MCP_TOOL_SCHEMAS = {
+    "fetch": [ # Server name matches config name
+        {
+            "name": "fetch", # Tool name
             "description": "Fetches a URL from the internet and optionally extracts its contents as markdown.",
-            "parameters": {"type": "object", "properties": {"url": {"type": "string", "format": "uri"}, "max_length": {"type": "integer", "default": 5000}, "start_index": {"type": "integer", "default": 0}, "raw": {"type": "boolean", "default": False}}, "required": ["url"]}
+            "input_schema": { # Use input_schema as per MCP spec
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "description": "URL to fetch",
+                        "format": "uri",
+                        "minLength": 1,
+                        "title": "Url",
+                        "type": "string"
+                    },
+                    "max_length": {
+                        "default": 5000,
+                        "description": "Maximum number of characters to return.",
+                        "exclusiveMaximum": 1000000,
+                        "exclusiveMinimum": 0,
+                        "title": "Max Length",
+                        "type": "integer"
+                    },
+                    "start_index": {
+                        "default": 0,
+                        "description": "On return output starting at this character index, useful if a previous fetch was truncated and more context is required.",
+                        "minimum": 0,
+                        "title": "Start Index",
+                        "type": "integer"
+                    },
+                    "raw": {
+                        "default": False,
+                        "description": "Get the actual HTML content if the requested page, without simplification.",
+                        "title": "Raw",
+                        "type": "boolean"
+                    }
+                },
+                "required": ["url"],
+                "title": "Fetch"
+            }
         }
-    },
-    "sequential-thinking": { # Note: hyphen in name
-        "sequentialthinking": {
-            "description": "A detailed tool for dynamic and reflective problem-solving through thoughts.",
-            "parameters": {"type": "object", "properties": {"thought": {"type": "string"}, "nextThoughtNeeded": {"type": "boolean"}, "thoughtNumber": {"type": "integer", "minimum": 1}, "totalThoughts": {"type": "integer", "minimum": 1}, "isRevision": {"type": "boolean"}, "revisesThought": {"type": "integer", "minimum": 1}, "branchFromThought": {"type": "integer", "minimum": 1}, "branchId": {"type": "string"}, "needsMoreThoughts": {"type": "boolean"}}, "required": ["thought", "nextThoughtNeeded", "thoughtNumber", "totalThoughts"]}
-        }
-    },
-    "memory": {
-        "search_nodes": {
-            "description": "Search for nodes in the knowledge graph based on a query.",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
-        },
-        "create_entities": {
-            "description": "Create multiple new entities in the knowledge graph.",
-            "parameters": {"type": "object", "properties": {"entities": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "entityType": {"type": "string"}, "observations": {"type": "array", "items": {"type": "string"}}}, "required": ["name", "entityType", "observations"]}}}, "required": ["entities"]}
-        },
-        # Add other memory tools...
-    },
-    "time": {
-        "get_current_time": {
-            "description": "Get current time in a specific timezone.",
-            "parameters": {"type": "object", "properties": {"timezone": {"type": "string", "description": "IANA timezone name"}}, "required": ["timezone"]}
-        },
-        "convert_time": {
-            "description": "Convert time between timezones.",
-            "parameters": {"type": "object", "properties": {"source_timezone": {"type": "string"}, "time": {"type": "string", "description": "HH:MM"}, "target_timezone": {"type": "string"}}, "required": ["source_timezone", "time", "target_timezone"]}
-        }
-    }
+    ]
+    # Add other known schemas here if needed
 }
 # ---
-
 
 class LLMService:
     """
@@ -198,7 +147,8 @@ class LLMService:
                     'model': self.embedding_model,
                     'api_key': embedding_api_key,
                     'base_url': embedding_base_url_to_pass
-                }
+                },
+                user_id=self.user_id # Pass user_id here
             )
         else:
             client_result = LLMFactory.create_client(
@@ -207,7 +157,8 @@ class LLMService:
                 api_key=self.api_key,
                 base_url=chat_base_url_to_pass,
                 embedding_model=self.embedding_model,
-                embedding_provider=embedding_provider
+                embedding_provider=embedding_provider,
+                user_id=self.user_id # Pass user_id here
             )
 
         # Handle single client or separate clients
@@ -215,6 +166,9 @@ class LLMService:
             self.chat_client, self.embedding_client = client_result
         else:
             self.chat_client = self.embedding_client = client_result
+
+        # Log user_id immediately after client assignment
+        logger.debug(f"LLMService.__init__: Assigned chat_client with user_id={getattr(self.chat_client, 'user_id', 'MISSING')}")
 
         # Create retriever for RAG
         self.retriever = HybridRetriever(db)
@@ -227,10 +181,12 @@ class LLMService:
         use_rag: bool = True,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
-        stream: bool = True
+        stream: bool = True,
+        completion_state: Dict[str, Any] = None # Added state dict parameter
     ) -> Union[Dict[str, Any], AsyncGenerator[Dict[str, Any], None]]:
         """
         Send a message to the LLM and get a response, orchestrating RAG and streaming.
+        If streaming, updates the provided completion_state dictionary.
         """
         # Get chat history
         messages = ChatService.get_messages(self.db, chat_id)
@@ -258,23 +214,59 @@ class LLMService:
         enabled_mcp_configs = [] # Keep track of configs for later execution
         if self.user_id:
             try:
-                enabled_mcp_configs = [c for c in MCPConfigService.get_configs_by_user(self.db, self.user_id) if c.enabled]
+                # Fetch enabled configurations
+                enabled_mcp_configs = [
+                    c for c in get_configs_by_user(self.db, self.user_id) # Use imported function
+                    # Check enabled status within config JSONB - Ensure config exists first
+                    if c.config and c.config.get("enabled", False)
+                ]
                 logger.info(f"Found {len(enabled_mcp_configs)} enabled MCP servers for user {self.user_id}")
+
+                # Format tools using KNOWN_MCP_TOOL_SCHEMAS
                 for config in enabled_mcp_configs:
-                    server_type_key = next((key for key in CONNECTED_SERVER_SCHEMAS if config.name.lower().startswith(key)), None)
-                    if server_type_key:
-                        server_tools = CONNECTED_SERVER_SCHEMAS[server_type_key]
-                        logger.info(f"Found schema for server type '{server_type_key}' (config: {config.name})")
-                        for tool_name, tool_info in server_tools.items():
-                            unique_tool_name = f"{config.name.replace('-', '_')}__{tool_name}"
-                            tools.append({"type": "function", "function": {"name": unique_tool_name, "description": tool_info.get("description"), "parameters": tool_info.get("parameters")}})
+                    server_name = config.name.lower() # Use lower case for matching
+                    if server_name in KNOWN_MCP_TOOL_SCHEMAS:
+                        known_schemas = KNOWN_MCP_TOOL_SCHEMAS[server_name]
+                        logger.info(f"Using known schema for server '{config.name}'. Found {len(known_schemas)} tool(s).")
+                        for tool_schema in known_schemas:
+                            tool_name = tool_schema.get("name")
+                            description = tool_schema.get("description")
+                            input_schema = tool_schema.get("input_schema")
+
+                            if tool_name and description and input_schema:
+                                # Create a unique name combining server and tool name
+                                unique_tool_name = f"{config.name.replace('-', '_')}__{tool_name}"
+                                formatted_tool = {
+                                    "type": "function", # Standard type for LLM tools
+                                    "function": {
+                                        "name": unique_tool_name,
+                                        "description": description,
+                                        "parameters": input_schema # Pass MCP input_schema as 'parameters'
+                                    }
+                                }
+                                tools.append(formatted_tool)
+                                logger.debug(f"Formatted tool: {unique_tool_name}")
+                            else:
+                                logger.warning(f"Skipping invalid known tool schema for server '{config.name}': {tool_schema}")
                     else:
-                        logger.warning(f"No predefined schema for server '{config.name}'. Creating generic.")
-                        tools.append({"type": "function", "function": {"name": config.name.replace("-", "_"), "description": f"Tool from '{config.name}' server.", "parameters": {"type": "object", "properties": {}}}})
-                if tools: logger.info(f"Generated {len(tools)} tool schemas from connected server info.")
-            except Exception as e: logger.error(f"Failed to fetch or format MCP tools: {e}"); tools = []
-        else: logger.warning("No user_id provided, cannot fetch MCP tools."); tools = []
+                        # Optionally handle servers without known schemas (e.g., skip, add generic placeholder)
+                        logger.warning(f"No known schema found for enabled MCP server '{config.name}'. Skipping tool generation for this server.")
+                        # Example placeholder (if needed):
+                        # tools.append({"type": "function", "function": {"name": config.name.replace("-", "_"), "description": f"Tool from '{config.name}' server.", "parameters": {"type": "object", "properties": {}}}})
+
+                if tools: logger.info(f"Generated {len(tools)} tool schemas using known definitions.")
+                else: logger.info("No tools generated using known definitions.")
+
+            except Exception as e:
+                logger.exception(f"An error occurred while fetching or describing MCP tools: {e}")
+                tools = [] # Ensure tools list is empty on error
+        else:
+            logger.warning("No user_id provided to LLMService, cannot fetch MCP tools.")
+            tools = []
         # --- End Tool Fetching and Formatting ---
+
+        # Explicitly log the final tools list being passed, regardless of debug settings
+        logger.info(f"[MCP Tool Check] Final tools list prepared for LLM: {json.dumps(tools, indent=2)}")
 
         # Format messages for the LLM, including history
         formatted_messages = [self.chat_client.format_chat_message("system", current_system_prompt)]
@@ -298,7 +290,8 @@ class LLMService:
             else:
                 # Regular message formatting
                 formatted_messages.append(self.chat_client.format_chat_message(msg.role, msg.content))
-        formatted_messages.append(self.chat_client.format_chat_message("user", user_message))
+        # Remove duplicate append; user message is now saved by API route and fetched by get_messages
+        # formatted_messages.append(self.chat_client.format_chat_message("user", user_message))
 
         # Logging
         roles = [msg["role"] for msg in formatted_messages]; logger.info(f"Sending {len(formatted_messages)} messages to LLM. Roles: {roles}")
@@ -311,12 +304,19 @@ class LLMService:
         # Generate response
         if stream:
             # Streaming logic (passes tools down)
-            return stream_llm_response(
-                db=self.db, chat_client=self.chat_client, chat_id=chat_id,
+            # Log the user_id attribute of the client being passed
+            logger.debug(f"LLMService.chat: Passing chat_client with user_id={getattr(self.chat_client, 'user_id', 'MISSING')}")
+            # Return awaitable generator to be awaited by the caller
+            stream_generator = stream_llm_response(
+                # db=self.db, # Removed db argument
+                chat_client=self.chat_client, chat_id=chat_id,
                 formatted_messages=formatted_messages, temperature=temperature, max_tokens=max_tokens,
                 context_documents=context_documents, system_prompt=current_system_prompt,
-                model=self.model, provider=self.provider, tools=tools
+                model=self.model, provider=self.provider, tools=tools,
+                completion_state=completion_state, # Pass state dict down
+                user_id=self.user_id # Pass user_id directly
             )
+            return stream_generator # Return the awaitable generator directly
         else:
             # --- Non-Streaming Multi-Turn Logic ---
             current_response = None
@@ -399,7 +399,7 @@ class LLMService:
                         else:
                             tool_execution_tasks.append(
                                 asyncio.to_thread( # Run sync execute_mcp_tool in thread
-                                    MCPConfigService.execute_mcp_tool,
+                                    execute_mcp_tool, # Use imported function
                                     db=self.db, config_id=config_id, tool_call_id=tool_call_id,
                                     tool_name=full_tool_name, arguments_str=arguments_str
                                 )
