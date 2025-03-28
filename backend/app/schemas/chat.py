@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field, field_validator # Import field_validator
+from pydantic import BaseModel, Field, field_validator, computed_field # Import computed_field
 from datetime import datetime
 
 # Message schemas
@@ -27,6 +27,7 @@ class MessageResponse(MessageBase):
     feedback_text: Optional[str] = None
     reviewed: Optional[bool] = False
     context_documents: Optional[List[str]] = None
+    related_question_content: Optional[str] = None # Reinstate simple field
 
     @field_validator('context_documents', mode='before')
     @classmethod
@@ -40,6 +41,8 @@ class MessageResponse(MessageBase):
         # Fallback: If it's not None or a list, return an empty list
         # This handles cases where the JSON might be stored differently unexpectedly
         return []
+
+    # Reverted: Removed computed_field
 
     class Config:
         from_attributes = True

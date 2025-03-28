@@ -10,6 +10,7 @@ import { FeedbackType } from '@/components/chat/FeedbackButton'; // Assuming Fee
 
 export interface UseChatMessagesReturn {
   isStreaming: boolean;
+  isWaitingForResponse: boolean; // Expose new state
   error: string | null; // Error specific to messaging
   messagesEndRef: React.RefObject<HTMLDivElement>;
   handleSendMessage: (messageContent: string, contextDocuments?: string[]) => Promise<void>;
@@ -30,12 +31,13 @@ export const useChatMessages = (
   const { showNotification } = useNotification();
   const router = useRouter();
 
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-
-  // Function to close any existing EventSource
+  
+    const [isStreaming, setIsStreaming] = useState(false);
+    const [isWaitingForResponse, setIsWaitingForResponse] = useState(false); // New state for initial wait
+    const [error, setError] = useState<string | null>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const eventSourceRef = useRef<EventSource | null>(null);
+  
   const closeEventSource = useCallback(() => {
     if (eventSourceRef.current) {
       console.log('Closing existing EventSource connection');
@@ -169,6 +171,11 @@ export const useChatMessages = (
     try {
       // console.log('Received event data:', event.data.substring(0, 100) + '...'); // Log less verbosely
       const data = JSON.parse(event.data);
+
+      // Clear waiting state on first received chunk
+      if (isWaitingForResponse) {
+        setIsWaitingForResponse(false);
+      }
 
       if (data.error) {
         setError(data.content || 'An error occurred during streaming');
@@ -340,6 +347,9 @@ export const useChatMessages = (
         }
       }
 
+      // Set waiting state before starting stream
+      setIsWaitingForResponse(true);
+
       // 6. Setup and start EventSource
       const eventSource = setupEventSource(chatId, messageContent, contextDocuments);
       eventSource.onmessage = handleEventMessage;
@@ -367,6 +377,7 @@ export const useChatMessages = (
 
   return {
     isStreaming,
+    isWaitingForResponse, // Add new state to return object
     error,
     messagesEndRef,
     handleSendMessage,

@@ -52,6 +52,10 @@ class Message(Base):
     # RAG metadata
     context_documents = Column(JSON, nullable=True)
     
+    # Link to the user question for feedback context
+    related_question_id = Column(String, ForeignKey("messages.id"), nullable=True)
+    related_question = relationship("Message", remote_side=[id]) # Self-referential relationship
+    
     # Relationships
     chat = relationship("Chat", back_populates="messages")
     

@@ -175,6 +175,18 @@ const ChatReview = () => {
                       <span>{new Date(message.created_at).toLocaleString()}</span>
                     </div>
 
+                    {/* Related User Question (if available) */}
+                    {message.related_question_content && (
+                      <div className="border-t border-dashed border-gray-300 dark:border-gray-600 pt-3 mt-3">
+                        <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                          In response to user question:
+                        </h4>
+                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap text-sm italic">
+                          {message.related_question_content}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Message Content */}
                     <div className="border-t border-b border-gray-200 dark:border-gray-700 py-3">
                       <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
