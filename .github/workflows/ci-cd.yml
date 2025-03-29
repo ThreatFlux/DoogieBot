@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: self-hosted
+    runs-on: Ubuntu-Large
 
     steps:
       # Checkout code
@@ -76,7 +76,7 @@ jobs:
         if: success() && github.event_name == 'push'
         run: |
           # Set image name based on repository name
-          IMAGE_NAME=ghcr.io/toosmooth/doogiebot
+          IMAGE_NAME=ghcr.io/threatflux/doogiebot
           docker build . -t $IMAGE_NAME
           # Tag with branch name
           BRANCH=${GITHUB_REF#refs/heads/}
