@@ -263,8 +263,8 @@ debug:
 	@sleep 60
 	@echo "${YELLOW}Checking logs for server readiness...${NC}"
 	@if $(DOCKER_COMPOSE) logs app | grep -q "Uvicorn running"; then \
-		echo "${GREEN}Server seems ready. Running fetch tool test against local server...${NC}"; \
-		TEST_URL="http://host.docker.internal:8888/test.txt" ./backend/tests/test_fetch_tool.sh; \
+		echo "${GREEN}Server seems ready. Running fetch tool test against public URL...${NC}"; \
+		TEST_URL="https://example.com" ./backend/tests/test_fetch_tool.sh; \
 	else \
 		echo "${RED}Server did not start correctly. Displaying logs:${NC}"; \
 		$(DOCKER_COMPOSE) logs app; \

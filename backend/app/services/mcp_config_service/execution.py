@@ -10,6 +10,9 @@ import socket
 import struct # Needed for unpacking header
 from typing import Dict, Any, Optional # Added Optional
 
+# Force DEBUG logging for this module
+logging.getLogger(__name__).setLevel(logging.DEBUG)
+
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status as fastapi_status
 import docker
@@ -66,7 +69,7 @@ def _find_complete_json(buffer: bytes) -> tuple[bytes | None, bytes]:
 def _read_mcp_response(
     raw_socket: socket.socket,
     expected_id: str,
-    timeout: int = 60
+    timeout: int = 120 # Ensure timeout is 120 seconds
 ) -> Dict[str, Any]:
     """
     Helper function to read and parse a specific JSON-RPC response from a socket,
@@ -78,10 +81,10 @@ def _read_mcp_response(
     response_content = None
     error_content = None
 
-    logger.debug(f"Starting to read MCP response for ID: {expected_id} (Timeout: {timeout}s)...")
+    logger.debug(f"Starting to read MCP response for ID: {expected_id} (Timeout: {timeout}s)...") # Log the actual timeout value
     try:
         logger.debug(f"Setting socket timeout to {timeout} seconds for MCP response read.")
-        raw_socket.settimeout(timeout)
+        raw_socket.settimeout(timeout) # Use the timeout parameter
 
         logger.debug(f"Entering while loop for MCP response read (ID: {expected_id})...")
         while time.time() - read_start_time < timeout:
@@ -260,6 +263,8 @@ def _execute_mcp_tool_call_via_docker_attach(
             return {"error": {"code": -32603, "message": "Invalid MCP Initialize response (missing result)"}}
         else:
              logger.info(f"MCP Initialize successful (ID: {init_id}). Result: {init_response['result']}")
+             # Add an even longer delay to allow server to process initialization
+             time.sleep(1.5) # 1500ms delay
              # Proceed to tool call
 
         # --- Send Tool Call Request ---
@@ -267,7 +272,7 @@ def _execute_mcp_tool_call_via_docker_attach(
         raw_socket.sendall((json.dumps(rpc_tool_call_request) + '\n').encode('utf-8'))
 
         # --- Read Tool Call Response ---
-        tool_response = _read_mcp_response(raw_socket, tool_call_id, timeout=60) # Use helper, 60s timeout for tool call
+        tool_response = _read_mcp_response(raw_socket, tool_call_id, timeout=120) # Use helper, 120s timeout for tool call
 
         if "result" in tool_response:
             tool_result_content = tool_response
@@ -413,13 +418,32 @@ def _execute_mcp_tool_logic(
             rpc_initialize_request=rpc_initialize_request # Pass initialize request
         )
 
-        # Wrap the result/error dict in the final {"result": json_string} structure
+        # Process and wrap the result/error dict
         if "result" in execution_result:
             result_data = execution_result["result"]
-            # Ensure result is always a string for the tool message content
-            result_data_str = json.dumps(result_data) if not isinstance(result_data, str) else result_data
+            final_result_str = ""
+            # Attempt to parse the result if it's a JSON string and extract 'content'
+            if isinstance(result_data, str):
+                try:
+                    parsed_result = json.loads(result_data)
+                    if isinstance(parsed_result, dict) and "content" in parsed_result:
+                        final_result_str = str(parsed_result["content"]) # Extract raw content
+                        logger.debug(f"Extracted 'content' from fetch tool result for {tool_call_id}.")
+                    else:
+                        final_result_str = result_data # Use original string if structure unexpected
+                except json.JSONDecodeError:
+                    final_result_str = result_data # Use original string if not valid JSON
+            elif isinstance(result_data, dict) and "content" in result_data:
+                # Handle case where result is already a dict (less likely but possible)
+                final_result_str = str(result_data["content"])
+                logger.debug(f"Extracted 'content' directly from fetch tool result dict for {tool_call_id}.")
+            else:
+                # Fallback: stringify the whole result if it's not string/dict or lacks 'content'
+                final_result_str = json.dumps(result_data) if not isinstance(result_data, str) else result_data
+
             logger.info(f"Tool '{tool_name}' executed successfully for call {tool_call_id}.")
-            return {"result": result_data_str}
+            # Return the potentially extracted raw content string
+            return {"result": final_result_str}
         elif "error" in execution_result:
             logger.warning(f"Tool '{tool_name}' execution failed for call {tool_call_id}: {execution_result['error']}")
             return {"result": json.dumps(execution_result)} # Return the error dict as JSON string in result

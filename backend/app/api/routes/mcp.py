@@ -239,7 +239,7 @@ async def stop_mcp_server(
             detail="Only admin users can stop MCP servers"
         )
 
-    db_config = MCPConfigService.get_config_by_id(db, config_id)
+    db_config = get_config_by_id(db, config_id) # Use imported function
     if not db_config or db_config.user_id != current_user.id:
         raise HTTPException(
             status_code=fastapi_status.HTTP_404_NOT_FOUND, # Use alias
@@ -278,14 +278,14 @@ async def restart_mcp_server(
             detail="Only admin users can restart MCP servers"
         )
 
-    db_config = MCPConfigService.get_config_by_id(db, config_id)
+    db_config = get_config_by_id(db, config_id) # Use imported function
     if not db_config or db_config.user_id != current_user.id:
         raise HTTPException(
             status_code=fastapi_status.HTTP_404_NOT_FOUND, # Use alias
             detail="MCP configuration not found"
         )
 
-    status_result = MCPConfigService.restart_server(db, config_id) # Renamed variable
+    status_result = restart_server(db, config_id) # Use imported function
     if not status_result:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR, # Use alias
@@ -308,4 +308,4 @@ async def get_mcp_config_json(
     """
     Get the MCP configuration JSON for Claude Desktop.
     """
-    return MCPConfigService.generate_mcp_config_json(db, current_user.id)
+    return generate_mcp_config_json(db, current_user.id) # Use imported function
