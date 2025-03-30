@@ -140,8 +140,8 @@ test_fetch_tool() {
   fi
 
   # --- Add delay before verification ---
-  echo -e "${BLUE}Waiting 5 seconds for background task to complete...${NC}"
-  sleep 5
+  echo -e "${BLUE}Waiting 8 seconds for background task to complete...${NC}" # Increased wait
+  sleep 8 # Increased wait
   # --- End delay ---
 
   # --- Verification Step (After Stream Completion) ---
