@@ -227,7 +227,7 @@ export const useChatMessages = (
           getChat(chatIdToRefresh).then(result => {
             if (result.chat) {
               console.log('Refreshed current chat data from backend:', result.chat.id);
-              setCurrentChat(prevChat => {
+              setCurrentChat((prevChat): Chat | null => { // Explicitly define return type
                 // If there's no previous chat, or the ID doesn't match the fetched chat,
                 // we must use the newly fetched chat directly. result.chat is non-null here.
                 if (!prevChat || prevChat.id !== result.chat.id) {
