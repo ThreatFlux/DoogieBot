@@ -225,13 +225,14 @@ export const useChatMessages = (
         if (currentChat?.id) {
           const chatIdToRefresh = currentChat.id; // Capture ID before potential state changes
           getChat(chatIdToRefresh).then(result => {
-            if (result.chat) {
-              console.log('Refreshed current chat data from backend:', result.chat.id);
+            const fetchedChat = result.chat; // Assign to a constant first
+            if (fetchedChat) { // Check the constant
+              console.log('Refreshed current chat data from backend:', fetchedChat.id);
               setCurrentChat((prevChat): Chat | null => { // Explicitly define return type
                 // If there's no previous chat, or the ID doesn't match the fetched chat,
-                // we must use the newly fetched chat directly. result.chat is non-null here.
-                if (!prevChat || prevChat.id !== result.chat.id) {
-                  return result.chat;
+                // use the newly fetched chat directly. fetchedChat is guaranteed non-null here.
+                if (!prevChat || prevChat.id !== fetchedChat.id) { // Use the constant
+                  return fetchedChat; // Use the constant
                 }
 
                 // --- If we are here, prevChat exists and IDs match. Merge messages. ---
@@ -240,7 +241,7 @@ export const useChatMessages = (
                 const prevMessagesMap = new Map(prevChat.messages?.map(msg => [msg.id, msg]));
 
                 // Ensure fetched messages is an array
-                const fetchedMessages = result.chat.messages || [];
+                const fetchedMessages = fetchedChat.messages || []; // Use the constant
 
                 // Map over fetched messages and merge with previous ones if necessary
                 const finalMessages = fetchedMessages.map(fetchedMsg => {
@@ -264,7 +265,7 @@ export const useChatMessages = (
                 // and use the merged messages array. This ensures we return a valid Chat object.
                 const updatedChat: Chat = {
                     ...prevChat,      // Base is the previous state
-                    ...result.chat,   // Overlay fields from the fetched chat (e.g., updated_at)
+                    ...fetchedChat,   // Use the constant to overlay fields (e.g., updated_at)
                     messages: finalMessages, // Use the carefully merged messages
                 };
                 return updatedChat; // Return the correctly typed Chat object
