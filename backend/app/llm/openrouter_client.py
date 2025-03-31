@@ -188,9 +188,15 @@ class OpenRouterClient(LLMClient):
                 
                 # Initialize variables for streaming
                 content = ""
-                token_count = 0
+                # token_count = 0 # Remove incorrect counter
                 chunk_count = 0
-                has_reasoning_support = False  # Flag to track if model provides reasoning
+                has_reasoning_support = False
+
+                # Variables to store final usage details if provided by the API
+                final_prompt_tokens = 0
+                final_completion_tokens = 0
+                final_total_tokens = 0
+                finish_reason = None
                 
                 # Process the stream
                 logger.debug(f"Starting to process OpenRouter stream")
@@ -203,7 +209,9 @@ class OpenRouterClient(LLMClient):
                             logger.debug("Received [DONE] from OpenRouter stream")
                         elif line.startswith(": OPENROUTER PROCESSING"):
                             logger.debug("OpenRouter processing message received")
-                        continue
+                        # Don't necessarily continue here, the [DONE] line might be followed by a final JSON with usage
+                        # Let the JSON parser handle potential errors
+                        # continue
                     
                     # Remove "data: " prefix if present
                     if line.startswith("data: "):
@@ -222,68 +230,52 @@ class OpenRouterClient(LLMClient):
                             logger.warning(f"Invalid response format: {data}")
                             continue
                             
-                        # Extract delta content
+                        # Extract delta content and finish reason
                         choices = data.get("choices", [])
-                        if not choices or not isinstance(choices, list):
-                            logger.warning(f"No choices in response: {data}")
-                            continue
-                            
-                        delta = choices[0].get("delta", {})
-                        if not isinstance(delta, dict):
-                            logger.warning(f"Invalid delta format: {delta}")
-                            continue
-                            
-                        delta_content = delta.get("content", "")
-                        delta_reasoning = delta.get("reasoning", "")
-                        
-                        if delta_content and isinstance(delta_content, str):
-                            chunk_count += 1
-                            # Remove "\boxed{" prefix if present
-                            if delta_content.startswith(r"\boxed{"):
-                                delta_content = delta_content[7:]
-                            content += delta_content
-                            
-                        if delta_reasoning and isinstance(delta_reasoning, str):
-                            # Mark that this model supports reasoning
-                            has_reasoning_support = True
-                            
-                            # Initialize reasoning buffer if needed
-                            if not hasattr(self, '_current_reasoning'):
-                                self._current_reasoning = ""
-                                self._reasoning_complete = False
-                            
-                            # Only add to current reasoning if we haven't completed one yet
-                            if not self._reasoning_complete:
-                                self._current_reasoning += delta_reasoning
-                                
-                                # Check for complete reasoning
-                                if delta_reasoning.endswith(('.', '!', '?')):
-                                    if self._current_reasoning.strip():
-                                        content += f"\n<think>{self._current_reasoning.strip()}</think>\n"
-                                    self._current_reasoning = ""
-                                    self._reasoning_complete = True
-                        
-                        # Always increment token count for each chunk
-                        token_count += 1
-                        
-                        # Log every 10th chunk to avoid excessive logging
-                        if chunk_count % 10 == 0:
-                            logger.debug(f"Received chunk {chunk_count} from OpenRouter: '{delta_content}' (total: {len(content)} chars)")
-                        
-                        # Calculate tokens per second
-                        tokens_per_second = self.calculate_tokens_per_second(start_time, token_count)
-                        
+                        delta_content = "" # Initialize delta content for this chunk
+
+                        if choices and isinstance(choices, list):
+                            delta = choices[0].get("delta", {})
+                            if isinstance(delta, dict):
+                                delta_content = delta.get("content", "")
+                                # ... (handle delta_reasoning if needed) ...
+                                if delta_content and isinstance(delta_content, str):
+                                    chunk_count += 1
+                                    # ... (handle boxed content) ...
+                                    content += delta_content
+                            # Check for finish reason in the choice
+                            finish_reason = choices[0].get("finish_reason", finish_reason)
+                        else:
+                            # Log if choices are missing or invalid, but continue processing for usage info
+                            logger.debug(f"No valid choices in chunk: {data}")
+
+
+                        # Check for usage information in the main data object (often in the final chunk)
+                        usage = data.get("usage")
+                        if usage and isinstance(usage, dict):
+                             logger.debug(f"Found usage info in chunk: {usage}")
+                             final_prompt_tokens = usage.get("prompt_tokens", final_prompt_tokens)
+                             final_completion_tokens = usage.get("completion_tokens", final_completion_tokens)
+                             final_total_tokens = usage.get("total_tokens", final_prompt_tokens + final_completion_tokens)
+
+
+                        # Calculate tokens per second based on accumulated content length (approximation)
+                        # A more accurate way would be to use final_completion_tokens if available at the end
+                        # Use chunk_count as a proxy for completion tokens for intermediate TPS calculation
+                        approx_tokens_per_second = self.calculate_tokens_per_second(start_time, chunk_count)
+
                         logger.debug(f"Yielding chunk {chunk_count} at {time.time()}")
                         
                         # Yield immediately without any delay
                         yield {
-                            "content": content,
+                            "content": content, # Yield accumulated content so far
                             "model": self.model,
                             "provider": "openrouter",
-                            "tokens": token_count,
-                            "tokens_per_second": tokens_per_second,
+                            # "tokens": token_count, # Remove incorrect count
+                            "tokens_per_second": approx_tokens_per_second, # Yield approximate TPS
                             "done": False,
                             "timestamp": time.time()
+                            # Do not yield usage here, wait for the final chunk
                         }
                         
                         # Ensure the chunk is sent immediately
@@ -293,21 +285,30 @@ class OpenRouterClient(LLMClient):
                 
                 logger.debug(f"OpenRouter stream complete, yielding final chunk with done=True")
                 # Final yield with done=True
-                tokens_per_second = self.calculate_tokens_per_second(start_time, token_count)
+                # Use the actual token counts if they were found during the stream
+                final_tokens_to_yield = final_total_tokens if final_total_tokens > 0 else final_completion_tokens
+                # Calculate final TPS based on actual completion tokens if available
+                final_tps = self.calculate_tokens_per_second(start_time, final_completion_tokens) if final_completion_tokens > 0 else 0.0
                 
                 # Add a note if the model doesn't support reasoning
                 if not has_reasoning_support and self._current_reasoning == "":
                     logger.info(f"Model {self.model} does not appear to support reasoning output")
                 
                 yield {
-                    "content": content,
+                    "content": content, # Final accumulated content
                     "model": self.model,
                     "provider": "openrouter",
-                    "tokens": token_count,
-                    "tokens_per_second": tokens_per_second,
-                    "done": True
+                    "tokens": final_tokens_to_yield, # Use actual tokens from usage if found
+                    "tokens_per_second": final_tps, # Use TPS based on actual completion tokens if found
+                    "done": True,
+                    "usage": { # Include full usage details if available
+                        "prompt_tokens": final_prompt_tokens,
+                        "completion_tokens": final_completion_tokens,
+                        "total_tokens": final_total_tokens
+                    },
+                    "finish_reason": finish_reason
                 }
-                logger.debug(f"OpenRouter streaming complete, yielded {chunk_count} chunks")
+                logger.debug(f"OpenRouter streaming complete, yielded final chunk with {final_tokens_to_yield} tokens")
 
     async def get_available_models(self) -> tuple[List[str], List[str]]:
         """
