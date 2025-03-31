@@ -115,30 +115,30 @@ const DocumentReferences: React.FC<DocumentReferencesProps> = ({ documentIds }) 
           const info = chunkInfo[chunkId] || { documentId: '', documentTitle: '', loading: true, error: false };
 
           return (
-            <li key={chunkId} className="text-gray-600 dark:text-gray-400 truncate mb-1 flex items-center justify-between">
-              <div> {/* Wrap text content */}
-                <span className="font-medium">Context Chunk {i + 1}:</span>{' '}
+            <li key={chunkId} className="text-gray-600 dark:text-gray-400 mb-1 flex items-center justify-between text-sm">
+              <div className="flex-grow truncate mr-2"> {/* Wrap text content and allow truncation */}
                 {info.loading ? (
-                  <span className="text-gray-400">Loading title...</span>
+                  <span className="text-gray-400 italic">Loading title...</span>
                 ) : info.error || !info.documentTitle ? (
-                  // Fallback to just showing the chunk ID
-                  <span title={`Chunk ID: ${chunkId}`}>{shortId}</span>
+                  // Fallback to just showing the chunk ID if title fails
+                  <span title={`Chunk ID: ${chunkId}`} className="font-mono text-xs">{shortId}</span>
                 ) : (
-                  // Show document title and chunk ID when available
+                  // Show document title - chunk ID
                   <>
-                    <span className="font-medium" title={`From document: ${info.documentTitle} (ID: ${info.documentId})`}>
+                    <span className="font-medium" title={`Document: ${info.documentTitle} (ID: ${info.documentId})`}>
                       {info.documentTitle}
                     </span>
-                    <span className="text-gray-400 text-xs ml-1" title={`Chunk ID: ${chunkId}`}>({shortId})</span>
+                    <span className="text-gray-400 mx-1">-</span>
+                    <span className="font-mono text-xs" title={`Chunk ID: ${chunkId}`}>{shortId}</span>
                   </>
                 )}
               </div>
-              {/* Add View Chunk Button */}
+              {/* View Chunk Button */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handleViewChunkContent(chunkId)}
-                className="ml-2 text-xs"
+                className="text-xs flex-shrink-0" // Prevent button from shrinking text
                 title={`View content of chunk ${shortId}`}
               >
                 View Chunk

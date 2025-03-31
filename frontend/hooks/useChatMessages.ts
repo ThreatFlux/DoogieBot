@@ -221,12 +221,39 @@ export const useChatMessages = (
         setIsStreaming(false);
         // Refresh the chat list to ensure title/timestamp updates are reflected
         loadChats();
-        // Refresh the current chat to get final message IDs from the backend
+        // Refresh the current chat to get final message IDs and potentially other updates
         if (currentChat?.id) {
-          getChat(currentChat.id).then(result => {
+          const chatIdToRefresh = currentChat.id; // Capture ID before potential state changes
+          getChat(chatIdToRefresh).then(result => {
             if (result.chat) {
-              console.log('Refreshed current chat with final message IDs:', result.chat.id);
-              setCurrentChat(result.chat);
+              console.log('Refreshed current chat data from backend:', result.chat.id);
+              setCurrentChat(prevChat => {
+                if (!prevChat || prevChat.id !== result.chat.id) {
+                  // If the chat changed or is gone, use the fetched one directly
+                  return result.chat;
+                }
+
+                // Merge fetched data with existing state, preserving token counts if missing in fetched data
+                const finalMessages = result.chat.messages?.map(fetchedMsg => {
+                  // Find the corresponding message in the previous state
+                  const prevMsg = prevChat.messages?.find(pMsg => pMsg.id === fetchedMsg.id);
+
+                  if (prevMsg && prevMsg.role === 'assistant') {
+                    // If the fetched message lacks token info but the previous state had it, keep it
+                    return {
+                      ...fetchedMsg,
+                      tokens: fetchedMsg.tokens ?? prevMsg.tokens,
+                      tokens_per_second: fetchedMsg.tokens_per_second ?? prevMsg.tokens_per_second,
+                    };
+                  }
+                  return fetchedMsg; // Otherwise, use the fetched message
+                }) || []; // Handle case where fetched chat has no messages
+
+                return {
+                  ...result.chat, // Use fetched chat as base
+                  messages: finalMessages, // Use merged messages
+                };
+              });
             } else {
               console.error('Failed to refresh chat after streaming:', result.error);
               showNotification(`Failed to refresh chat details: ${result.error}`, 'error');
