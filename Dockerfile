@@ -61,8 +61,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
 WORKDIR /app
 
 # Copy frontend package files
-COPY frontend/package.json /app/frontend/
-COPY frontend/pnpm-lock.yaml* /app/frontend/ # Copy lock file separately, ensure destination ends with /
+COPY frontend/package.json frontend/pnpm-lock.yaml /app/frontend/
 
 # Install frontend dependencies
 WORKDIR /app/frontend
