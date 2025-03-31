@@ -58,30 +58,34 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     npm install -g pnpm
 
 # Set working directory
-WORKDIR /app
+WORKDIR /app/frontend
 
-# Copy frontend package files
-COPY frontend/package.json frontend/pnpm-lock.yaml /app/frontend/
+# Copy package files first for cache optimization
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
 
 # Install frontend dependencies
-WORKDIR /app/frontend
-# Force clean install
-RUN rm -rf node_modules && rm -f pnpm-lock.yaml && pnpm install --force
+RUN pnpm install --frozen-lockfile # Use --frozen-lockfile for reliability
 
-# Temporarily move node_modules out of the way
-RUN mv /app/frontend/node_modules /tmp/node_modules
-
-# Copy frontend code (will respect .dockerignore for node_modules)
-WORKDIR /app
-COPY frontend/ /app/frontend/
-
-# Restore node_modules
-RUN rm -rf /app/frontend/node_modules && \
-    mv /tmp/node_modules /app/frontend/node_modules
+# Copy the rest of the frontend code
+# Copy necessary source files and directories explicitly
+COPY frontend/next.config.js ./
+COPY frontend/postcss.config.js ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/tsconfig.json ./
+COPY frontend/next-env.d.ts ./
+COPY frontend/.prettierrc ./
+COPY frontend/components ./components
+COPY frontend/contexts ./contexts
+COPY frontend/hooks ./hooks
+COPY frontend/pages ./pages
+COPY frontend/public ./public
+COPY frontend/services ./services
+COPY frontend/styles ./styles
+COPY frontend/types ./types
+COPY frontend/utils ./utils
 
 # Build frontend for production
-WORKDIR /app/frontend # Ensure we are in the correct directory for build
-RUN NODE_ENV=production pnpm run build
+RUN cd /app/frontend && NODE_ENV=production pnpm run build
 
 # Stage 3: Test stage
 FROM backend-builder AS test
