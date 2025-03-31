@@ -80,7 +80,7 @@ RUN rm -rf /app/frontend/node_modules && \
     mv /tmp/node_modules /app/frontend/node_modules
 
 # Build frontend for production
-# WORKDIR /app/frontend # Already in this directory
+WORKDIR /app/frontend # Ensure we are in the correct directory for build
 RUN NODE_ENV=production pnpm run build
 
 # Stage 3: Test stage
