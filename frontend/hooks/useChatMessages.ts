@@ -228,31 +228,46 @@ export const useChatMessages = (
             if (result.chat) {
               console.log('Refreshed current chat data from backend:', result.chat.id);
               setCurrentChat(prevChat => {
+                // If there's no previous chat, or the ID doesn't match the fetched chat,
+                // we must use the newly fetched chat directly. result.chat is non-null here.
                 if (!prevChat || prevChat.id !== result.chat.id) {
-                  // If the chat changed or is gone, use the fetched one directly
                   return result.chat;
                 }
 
-                // Merge fetched data with existing state, preserving token counts if missing in fetched data
-                const finalMessages = result.chat.messages?.map(fetchedMsg => {
-                  // Find the corresponding message in the previous state
-                  const prevMsg = prevChat.messages?.find(pMsg => pMsg.id === fetchedMsg.id);
+                // --- If we are here, prevChat exists and IDs match. Merge messages. ---
 
+                // Create a map of previous messages for efficient lookup
+                const prevMessagesMap = new Map(prevChat.messages?.map(msg => [msg.id, msg]));
+
+                // Ensure fetched messages is an array
+                const fetchedMessages = result.chat.messages || [];
+
+                // Map over fetched messages and merge with previous ones if necessary
+                const finalMessages = fetchedMessages.map(fetchedMsg => {
+                  const prevMsg = prevMessagesMap.get(fetchedMsg.id);
+
+                  // If a previous message exists and it's an assistant message, merge token data
                   if (prevMsg && prevMsg.role === 'assistant') {
-                    // If the fetched message lacks token info but the previous state had it, keep it
                     return {
-                      ...fetchedMsg,
+                      ...fetchedMsg, // Start with the fetched message data
+                      // Keep token info from prev state ONLY if missing in fetched state
                       tokens: fetchedMsg.tokens ?? prevMsg.tokens,
                       tokens_per_second: fetchedMsg.tokens_per_second ?? prevMsg.tokens_per_second,
                     };
                   }
-                  return fetchedMsg; // Otherwise, use the fetched message
-                }) || []; // Handle case where fetched chat has no messages
 
-                return {
-                  ...result.chat, // Use fetched chat as base
-                  messages: finalMessages, // Use merged messages
+                  // Otherwise (no previous message, or not an assistant message), use the fetched message as is
+                  return fetchedMsg;
+                });
+
+                // Construct the final state: Start with prevChat, overlay fetched data (like updated_at),
+                // and use the merged messages array. This ensures we return a valid Chat object.
+                const updatedChat: Chat = {
+                    ...prevChat,      // Base is the previous state
+                    ...result.chat,   // Overlay fields from the fetched chat (e.g., updated_at)
+                    messages: finalMessages, // Use the carefully merged messages
                 };
+                return updatedChat; // Return the correctly typed Chat object
               });
             } else {
               console.error('Failed to refresh chat after streaming:', result.error);
