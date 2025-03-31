@@ -27,13 +27,15 @@ class DocumentResponse(DocumentBase):
     created_at: datetime
     updated_at: datetime
     meta_data: Optional[Dict[str, Any]] = None
+    chunk_count: Optional[int] = None # Added chunk_count
 
     class Config:
         from_attributes = True
 
 class DocumentDetailResponse(DocumentResponse):
     content: Optional[str] = None
-    chunks: Optional[List["DocumentChunkResponse"]] = None
+    # Removed chunks list, will be fetched separately
+    # chunks: Optional[List["DocumentChunkResponse"]] = None
 
     class Config:
         from_attributes = True
@@ -56,7 +58,7 @@ class DocumentChunkResponse(DocumentChunkBase):
 
     class Config:
         from_attributes = True
-        
+
     @validator('embedding', pre=True)
     def parse_embedding(cls, v):
         if isinstance(v, str):
@@ -66,6 +68,27 @@ class DocumentChunkResponse(DocumentChunkBase):
             except:
                 return None
         return v
+
+# New schema for listing chunk IDs
+class DocumentChunkIdResponse(BaseModel):
+    id: str
+    chunk_index: int
+
+    class Config:
+        from_attributes = True
+
+# New schema for fetching a single chunk's content
+class DocumentChunkDetailResponse(BaseModel):
+    id: str
+    document_id: str
+    content: str
+    chunk_index: int
+    meta_data: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 # Processing schemas
 class ProcessingStatus(BaseModel):
@@ -96,4 +119,4 @@ class PaginatedResponse(BaseModel, Generic[T]):
     pages: int
 
 # Update forward references
-DocumentDetailResponse.update_forward_refs()
+# DocumentDetailResponse.update_forward_refs() # No longer needed as chunks are removed

@@ -61,11 +61,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
 WORKDIR /app
 
 # Copy frontend package files
-COPY frontend/package.json frontend/pnpm-lock.yaml* /app/frontend/
+COPY frontend/package.json /app/frontend/
+COPY frontend/pnpm-lock.yaml* /app/frontend/ # Copy lock file separately, ensure destination ends with /
 
 # Install frontend dependencies
 WORKDIR /app/frontend
-RUN pnpm install
+# Force clean install
+RUN rm -rf node_modules && rm -f pnpm-lock.yaml && pnpm install --force
 
 # Temporarily move node_modules out of the way
 RUN mv /app/frontend/node_modules /tmp/node_modules
@@ -79,7 +81,7 @@ RUN rm -rf /app/frontend/node_modules && \
     mv /tmp/node_modules /app/frontend/node_modules
 
 # Build frontend for production
-WORKDIR /app/frontend
+# WORKDIR /app/frontend # Already in this directory
 RUN NODE_ENV=production pnpm run build
 
 # Stage 3: Test stage

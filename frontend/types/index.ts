@@ -89,11 +89,12 @@ export interface Document {
   created_at: string;
   updated_at: string;
   meta_data?: any;
-  content?: string;
-  chunks?: DocumentChunk[];
+  content?: string; // Content might still be present for manual docs or detail view
+  chunk_count?: number; // Added chunk count
+  // chunks?: DocumentChunk[]; // Removed, fetched separately
 }
 
-export interface DocumentChunk {
+export interface DocumentChunk { // Keep this for potential future use or other contexts
   id: string;
   document_id: string;
   content: string;
@@ -102,6 +103,23 @@ export interface DocumentChunk {
   created_at: string;
   embedding?: number[];
 }
+
+// New type for listing chunk IDs
+export interface DocumentChunkId {
+  id: string;
+  chunk_index: number;
+}
+
+// New type for fetching chunk details
+export interface DocumentChunkDetail {
+  id: string;
+  document_id: string;
+  content: string;
+  chunk_index: number;
+  meta_data?: any;
+  created_at: string;
+}
+
 
 export interface ProcessingStatus {
   status: string;
