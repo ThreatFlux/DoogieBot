@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Float, func
+from sqlalchemy import Column, String, Boolean, DateTime, Float, Integer, func
 from sqlalchemy.dialects.sqlite import JSON
 import uuid
 
@@ -25,12 +25,12 @@ class LLMConfig(Base):
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    
+    reranked_top_n = Column(Integer, nullable=True) # Number of docs to send to LLM after reranking
+
     # Additional configuration stored as JSON
     # Can include:
-    # - rag_top_k: Number of RAG results to return
-    # - reranking_provider: Provider for reranking model
-    # - reranking_model: Model to use for reranking
+    # - rag_top_k: Number of RAG results to retrieve initially
     # - use_reranking: Boolean flag to enable/disable reranking
-    # - temperature: (Now a top-level field)
+    # - (reranked_top_n is now a top-level field)
+    # - (temperature is now a top-level field)
     config = Column(JSON, nullable=True)

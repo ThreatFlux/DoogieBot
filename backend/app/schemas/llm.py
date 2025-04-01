@@ -12,7 +12,8 @@ class LLMConfigBase(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     temperature: Optional[float] = Field(0.7, description="LLM temperature setting (0.0-2.0). Default is 0.7")
-    config: Optional[Dict[str, Any]] = None
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Generic config dictionary for provider-specific settings like rag_top_k, use_reranking")
+    reranked_top_n: Optional[int] = Field(None, description="Number of documents to send to LLM after reranking. Defaults to rag_top_k if not set.")
 
 class LLMConfigCreate(LLMConfigBase):
     """Schema for creating a new LLM configuration."""
@@ -30,6 +31,7 @@ class LLMConfigUpdate(BaseModel):
     is_active: Optional[bool] = None
     temperature: Optional[float] = None
     config: Optional[Dict[str, Any]] = None
+    reranked_top_n: Optional[int] = None
 
 class LLMConfigInDB(LLMConfigBase):
     """Schema for LLM configuration in the database."""

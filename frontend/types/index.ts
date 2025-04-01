@@ -196,6 +196,7 @@ export interface LLMConfig {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  reranked_top_n?: number | null; // Add the new field here
   config?: any;
 }
 

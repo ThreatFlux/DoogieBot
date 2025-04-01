@@ -29,6 +29,7 @@ export interface ChatConfig {
   system_prompt: string;
   is_active: boolean;
   temperature?: number; // Added temperature field
+  reranked_top_n?: number | null; // Number of docs to send to LLM after reranking
   config?: {
     rag_top_k?: number;
     use_reranking?: boolean;
