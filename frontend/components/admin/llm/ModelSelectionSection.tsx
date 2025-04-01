@@ -49,6 +49,8 @@ interface ModelSelectionSectionProps {
   activeChatConfig: ChatConfig | null;
   activeEmbeddingConfig: EmbeddingConfig | null;
   activeRerankingConfig: RerankingConfig | null;
+  temperature: number; // Added temperature prop
+  setTemperature: (temp: number) => void; // Added temperature setter prop
   
   // Callbacks
   onUpdate: () => Promise<void>;
@@ -102,7 +104,9 @@ export const ModelSelectionSection: React.FC<ModelSelectionSectionProps> = ({
   
   // Callbacks
   onUpdate,
-  setError
+  setError,
+  temperature, // Destructure temperature
+  setTemperature // Destructure setTemperature
 }) => {
   const [isSaving, setIsSaving] = useState(false);
 
@@ -133,6 +137,7 @@ export const ModelSelectionSection: React.FC<ModelSelectionSectionProps> = ({
           system_prompt: systemPrompt,
           api_key: providerConfigs.find(pc => pc.id === selectedChatProvider)?.api_key,
           base_url: serverUrl,
+          temperature: temperature, // Include temperature in update
           config: chatConfigData
         });
         
@@ -156,6 +161,7 @@ export const ModelSelectionSection: React.FC<ModelSelectionSectionProps> = ({
           system_prompt: systemPrompt,
           api_key: providerConfigs.find(pc => pc.id === selectedChatProvider)?.api_key,
           base_url: serverUrl,
+          temperature: temperature, // Include temperature in create
           config: chatConfigData
         });
         
@@ -300,6 +306,28 @@ export const ModelSelectionSection: React.FC<ModelSelectionSectionProps> = ({
           providers={providers}
           setError={setError}
         />
+        
+        {/* Temperature Slider */}
+        <div className="mt-4 mb-6 border-t pt-4">
+          <label htmlFor="temperature" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Chat Temperature: <span className="font-semibold">{temperature.toFixed(2)}</span>
+          </label>
+          <input
+            type="range"
+            id="temperature"
+            name="temperature"
+            min="0"
+            max="2"
+            step="0.01"
+            value={temperature}
+            onChange={(e) => setTemperature(parseFloat(e.target.value))}
+            className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <span>Deterministic (0.0)</span>
+            <span>Creative (2.0)</span>
+          </div>
+        </div>
         
         {/* Embedding Model Selection */}
         <ModelSelectionComponent

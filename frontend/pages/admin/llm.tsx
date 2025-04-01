@@ -6,7 +6,8 @@ import {
   RAGConfigSection,
   ModelSelectionSection,
   APIKeysSection,
-  ProviderConfig
+  ProviderConfig,
+  ChatConfig // Import ChatConfig type
 } from '../../components/admin/llm';
 import {
   getLLMProviders,
@@ -24,7 +25,7 @@ const LLMConfiguration: React.FC = () => {
   const [rerankingConfigs, setRerankingConfigs] = useState<any[]>([]);
   
   // State for active configs
-  const [activeChatConfig, setActiveChatConfig] = useState<any | null>(null);
+  const [activeChatConfig, setActiveChatConfig] = useState<ChatConfig | null>(null); // Use ChatConfig type
   const [activeEmbeddingConfig, setActiveEmbeddingConfig] = useState<any | null>(null);
   const [activeRerankingConfig, setActiveRerankingConfig] = useState<any | null>(null);
   
@@ -51,6 +52,9 @@ const LLMConfiguration: React.FC = () => {
   const [availableRerankingModels, setAvailableRerankingModels] = useState<string[]>([]);
   const [filteredRerankingModels, setFilteredRerankingModels] = useState<string[]>([]);
   const [isPollingRerankingModels, setIsPollingRerankingModels] = useState<boolean>(false);
+  
+  // State for temperature
+  const [temperature, setTemperature] = useState<number>(0.7); // Added temperature state
   
   // UI state
   const [loading, setLoading] = useState<boolean>(true);
@@ -104,7 +108,7 @@ const LLMConfiguration: React.FC = () => {
       setRerankingConfigs(rerankingConfigsData);
 
       // Set active configs
-      const activeChatConfig = chatConfigsData.find((c: any) => c.is_active);
+      const activeChatConfig: ChatConfig | undefined = chatConfigsData.find((c: ChatConfig) => c.is_active); // Use ChatConfig type here
       setActiveChatConfig(activeChatConfig || null);
       
       const activeEmbeddingConfig = embeddingConfigsData.find((c: any) => c.is_active);
@@ -167,6 +171,12 @@ const LLMConfiguration: React.FC = () => {
         const rerankingModel = activeChatConfig.config?.reranking_model || '';
         setSelectedRerankingProvider(rerankingProvider);
         setSelectedRerankingModel(rerankingModel);
+        
+        // Set temperature from active config, default to 0.7
+        setTemperature(activeChatConfig.temperature ?? 0.7);
+      } else {
+        // Reset temperature to default if no active config
+        setTemperature(0.7);
       }
       
       // Set the selected embedding provider and model based on active embedding config
@@ -266,6 +276,8 @@ const LLMConfiguration: React.FC = () => {
               activeChatConfig={activeChatConfig}
               activeEmbeddingConfig={activeEmbeddingConfig}
               activeRerankingConfig={activeRerankingConfig}
+              temperature={temperature} // Pass temperature state
+              setTemperature={setTemperature} // Pass temperature setter
               
               // Callbacks
               onUpdate={loadData}
