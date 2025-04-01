@@ -157,6 +157,14 @@ export interface RerankingConfig {
   config?: any;
 }
 
+// Add this new interface definition
+export interface RerankingProvider {
+  id: string;
+  name: string;
+  requires_api_key: boolean;
+  requires_base_url: boolean;
+}
+
 export interface ProcessingConfig {
   chunking: ChunkingConfig;
   embedding?: EmbeddingConfig;

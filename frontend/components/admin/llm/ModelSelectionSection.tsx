@@ -55,6 +55,7 @@ interface ModelSelectionSectionProps {
   // Callbacks
   onUpdate: () => Promise<void>;
   setError: (error: string | null) => void;
+  rerankingProviders: any[]; // Add prop for dedicated reranking providers
 }
 
 export const ModelSelectionSection: React.FC<ModelSelectionSectionProps> = ({
@@ -106,7 +107,8 @@ export const ModelSelectionSection: React.FC<ModelSelectionSectionProps> = ({
   onUpdate,
   setError,
   temperature, // Destructure temperature
-  setTemperature // Destructure setTemperature
+  setTemperature, // Destructure setTemperature
+  rerankingProviders // Destructure the new prop
 }) => {
   const [isSaving, setIsSaving] = useState(false);
 
@@ -361,7 +363,7 @@ export const ModelSelectionSection: React.FC<ModelSelectionSectionProps> = ({
           isPolling={isPollingRerankingModels}
           setIsPolling={setIsPollingRerankingModels}
           providerConfigs={providerConfigs}
-          providers={providers}
+          providers={rerankingProviders} // Use the dedicated reranking providers list
           setError={setError}
         />
         
