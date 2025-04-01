@@ -15,6 +15,8 @@ services:
       #- /app/frontend/node_modules
       #- /app/frontend/.next
       #- /app/backend/__pycache__
+      # Bind mount for Hugging Face cache
+      - ./model-cache:/cache
     environment:
       - NODE_ENV=development
       - PYTHONPATH=/app
@@ -35,6 +37,8 @@ services:
       # Memory management
       - PYTHONMALLOC=debug
       - PYTHONWARNINGS=always
+      # Set Hugging Face cache directory
+      - HF_HOME=/cache
     restart: unless-stopped
     entrypoint: ["/app/entrypoint.sh"]
     # Add memory limits to prevent OOM issues
