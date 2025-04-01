@@ -140,6 +140,10 @@ async def stream_llm_response(
 
                 # Save the final accumulated message BEFORE breaking
                 logger.debug(f"Saving final message for chat {chat_id} after processing final chunk.")
+                # --- Add detailed logging ---
+                logger.info(f"Final chunk data for saving: tokens={total_tokens}, tps={tokens_per_second}, model={current_model}, provider={current_provider}")
+                logger.info(f"Context doc IDs: {[doc['id'] for doc in context_documents] if context_documents else None}")
+                # --- End detailed logging ---
                 ChatService.add_message(
                     db,
                     chat_id,

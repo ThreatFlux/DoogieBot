@@ -29,7 +29,8 @@ dependencies = [
     "alembic>=1.15.1",
     
     # Authentication
-    "python-jose[cryptography]>=3.3.0",
+    "python-jose>=3.3.0", # Removed [cryptography] extra
+    "cryptography>=42.0", # Added cryptography directly
     "passlib[bcrypt]>=1.7.4",
     "bcrypt>=4.1.2",
     "python-multipart>=0.0.9",
