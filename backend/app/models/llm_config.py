@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, func
+from sqlalchemy import Column, String, Boolean, DateTime, Float, func
 from sqlalchemy.dialects.sqlite import JSON
 import uuid
 
@@ -21,6 +21,7 @@ class LLMConfig(Base):
     system_prompt = Column(String, nullable=False)
     api_key = Column(String, nullable=True)
     base_url = Column(String, nullable=True)
+    temperature = Column(Float, nullable=True, default=0.7)  # Added temperature field
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -31,4 +32,5 @@ class LLMConfig(Base):
     # - reranking_provider: Provider for reranking model
     # - reranking_model: Model to use for reranking
     # - use_reranking: Boolean flag to enable/disable reranking
+    # - temperature: (Now a top-level field)
     config = Column(JSON, nullable=True)

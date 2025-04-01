@@ -39,7 +39,8 @@ class LLMService:
         system_prompt: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        embedding_model: Optional[str] = None
+        embedding_model: Optional[str] = None,
+        temperature: Optional[float] = None # Added temperature to init args (optional)
     ):
         """
         Initialize the LLM service.
@@ -56,6 +57,8 @@ class LLMService:
         self.system_prompt = system_prompt or (chat_config.system_prompt if chat_config else settings.DEFAULT_SYSTEM_PROMPT)
         self.api_key = api_key or (chat_config.api_key if chat_config else None)
         self.base_url = base_url or (chat_config.base_url if chat_config else None)
+        # Fetch temperature from config or use provided/default
+        self.temperature = temperature if temperature is not None else (chat_config.temperature if chat_config and chat_config.temperature is not None else 0.7)
 
         # Embedding configuration
         self.embedding_model = embedding_model or (embedding_config.model if embedding_config else None)
@@ -118,7 +121,7 @@ class LLMService:
         chat_id: str,
         user_message: str,
         use_rag: bool = True,
-        temperature: float = 0.7,
+        # temperature: float = 0.7, # Removed temperature parameter
         max_tokens: Optional[int] = None,
         stream: bool = True
     ) -> Union[Dict[str, Any], AsyncGenerator[Dict[str, Any], None]]:
@@ -194,7 +197,7 @@ class LLMService:
                 chat_client=self.chat_client,
                 chat_id=chat_id,
                 formatted_messages=formatted_messages,
-                temperature=temperature,
+                temperature=self.temperature, # Use instance temperature
                 max_tokens=max_tokens,
                 context_documents=context_documents,
                 system_prompt=current_system_prompt, # Pass the potentially modified system prompt
@@ -206,7 +209,7 @@ class LLMService:
             start_time = time.time()
             response = await self.chat_client.generate(
                 formatted_messages,
-                temperature=temperature,
+                temperature=self.temperature, # Use instance temperature
                 max_tokens=max_tokens,
                 stream=False
             )
