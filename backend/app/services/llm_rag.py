@@ -11,13 +11,13 @@ from app.services.reranking_config import RerankingConfigService
 
 logger = logging.getLogger(__name__)
 
-from app.schemas.reranking import RerankingConfig # Import the schema
+from app.schemas.reranking import RerankingConfigInDB # Correct import
 from sentence_transformers import CrossEncoder # Import CrossEncoder
 
 # Cache for loaded CrossEncoder models
 _cross_encoder_cache: Dict[str, CrossEncoder] = {}
 
-async def _rerank_documents(reranking_config: RerankingConfig, query: str, documents: List[str]) -> List[float]:
+async def _rerank_documents(reranking_config: RerankingConfigInDB, query: str, documents: List[str]) -> List[float]: # Correct type hint
     """
     Rerank documents based on their relevance to the query using a configured reranker.
     Currently supports local CrossEncoder models loaded via sentence-transformers.
