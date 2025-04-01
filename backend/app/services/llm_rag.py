@@ -141,63 +141,65 @@ async def get_rag_context(
             reranking_config = RerankingConfigService.get_active_config(db)
 
             if reranking_config:
-                all_llm_configs = LLMConfigService.get_all_configs(db)
-                llm_config_for_reranker = next((c for c in all_llm_configs if c.provider == reranking_config.provider), None)
+                # Use the dedicated reranking config directly
+                logger.info(f"Reranking results using dedicated config: {reranking_config.provider}/{reranking_config.model}")
+                try:
+                    # Create reranking client using details from RerankingConfig
+                    reranking_client = LLMFactory._create_single_client(
+                        provider=reranking_config.provider,
+                        model=reranking_config.model,
+                        api_key=reranking_config.api_key, # Use key from reranking_config
+                        base_url=reranking_config.base_url # Use URL from reranking_config
+                    )
 
-                if llm_config_for_reranker:
-                    logger.info(f"Reranking results using dedicated config: {reranking_config.provider}/{reranking_config.model}")
-                    try:
-                        # Create reranking client
-                        reranking_client = LLMFactory._create_single_client(
-                            provider=reranking_config.provider,
-                            model=reranking_config.model,
-                            api_key=llm_config_for_reranker.api_key,
-                            base_url=llm_config_for_reranker.base_url
-                        )
+                    if not reranking_client:
+                        logger.warning("Failed to create reranking client using _create_single_client")
+                    else:
+                        documents = [doc["content"] for doc in context]
+                        logger.info(f"--- Documents before reranking for query '{query[:50]}...' ---")
+                        for i, doc in enumerate(context):
+                            logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Initial Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
+                        logger.info("---------------------------------------------------------")
 
-                        if not reranking_client:
-                            logger.warning("Failed to create reranking client using _create_single_client")
-                        else:
-                            documents = [doc["content"] for doc in context]
-                            logger.info(f"--- Documents before reranking for query '{query[:50]}...' ---")
+                        reranked_scores = await _rerank_documents(reranking_client, query, documents)
+
+                        if reranked_scores and len(reranked_scores) == len(context):
+                            for i, score in enumerate(reranked_scores):
+                                context[i]["score"] = score
+                            context.sort(key=lambda x: x["score"], reverse=True)
+                            logger.info(f"Successfully reranked {len(context)} documents.")
+                            logger.info(f"--- Documents after reranking for query '{query[:50]}...' ---")
                             for i, doc in enumerate(context):
-                                logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Initial Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
-                            logger.info("---------------------------------------------------------")
+                                logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Reranked Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
+                            logger.info("--------------------------------------------------------")
 
-                            reranked_scores = await _rerank_documents(reranking_client, query, documents)
+                        else:
+                            logger.warning(f"Reranking returned {len(reranked_scores) if reranked_scores else 0} scores for {len(context)} documents. Using original ranking.")
+                except Exception as e:
+                    logger.error(f"Error during reranking process: {str(e)}")
+            # If no dedicated reranking config is active, check the main LLM config flag
+            elif active_llm_config and active_llm_config.config and active_llm_config.config.get('use_reranking', False):
+                logger.warning("Reranking enabled in main LLM config, but no active dedicated reranking configuration found in the database. Skipping reranking.")
 
-                            if reranked_scores and len(reranked_scores) == len(context):
-                                for i, score in enumerate(reranked_scores):
-                                    context[i]["score"] = score
-                                context.sort(key=lambda x: x["score"], reverse=True)
-                                logger.info(f"Successfully reranked {len(context)} documents.")
-                                logger.info(f"--- Documents after reranking for query '{query[:50]}...' ---")
-                                for i, doc in enumerate(context):
-                                    logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Reranked Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
-                                logger.info("--------------------------------------------------------")
-
-                                # Apply reranked_top_n limit if set
-                                reranked_top_n = getattr(active_llm_config, 'reranked_top_n', None)
-                                if reranked_top_n is not None and reranked_top_n > 0:
-                                    if len(context) > reranked_top_n:
-                                        logger.info(f"Applying reranked_top_n limit: {reranked_top_n} (truncated from {len(context)})")
-                                        context = context[:reranked_top_n]
-                                    else:
-                                        logger.info(f"Reranked_top_n limit ({reranked_top_n}) is >= number of documents ({len(context)}), keeping all.")
-                                else:
-                                    logger.info("No reranked_top_n limit set or invalid value, keeping all reranked documents.")
-
-                            else:
-                                logger.warning(f"Reranking returned {len(reranked_scores) if reranked_scores else 0} scores for {len(context)} documents. Using original ranking.")
-                    except Exception as e:
-                        logger.error(f"Error during reranking process: {str(e)}")
-                else:
-                    logger.warning(f"Reranking enabled, active reranking config found ({reranking_config.provider}/{reranking_config.model}), but no matching LLM config found for provider '{reranking_config.provider}'. Cannot get API key/base URL. Skipping reranking.")
+        # Apply reranked_top_n limit AFTER reranking attempt (success or failure)
+        reranked_top_n = getattr(active_llm_config, 'reranked_top_n', None)
+        if reranked_top_n is not None and reranked_top_n > 0:
+            if len(context) > reranked_top_n:
+                logger.info(f"Applying final reranked_top_n limit: {reranked_top_n} (truncated from {len(context)})")
+                context = context[:reranked_top_n]
             else:
-                 if active_llm_config and active_llm_config.config and active_llm_config.config.get('use_reranking', False):
-                      logger.warning("Reranking enabled in main LLM config, but no active dedicated reranking configuration found in the database. Skipping reranking.")
+                logger.info(f"Final reranked_top_n limit ({reranked_top_n}) is >= number of documents ({len(context)}), keeping all.")
+        else:
+            # If no specific limit, default to rag_top_k or the number retrieved if rag_top_k is also missing
+            final_limit = top_k # top_k was determined earlier from rag_top_k or default
+            if len(context) > final_limit:
+                logger.info(f"Applying default limit (rag_top_k): {final_limit} (truncated from {len(context)})")
+                context = context[:final_limit]
+            else:
+                logger.info(f"No reranked_top_n limit set, keeping all {len(context)} documents (within rag_top_k limit of {final_limit}).")
 
         return context
+
     except Exception as e:
         logger.error(f"Error getting RAG context: {str(e)}")
         return None
