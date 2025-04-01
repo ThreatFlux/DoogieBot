@@ -8,10 +8,11 @@ interface ChunkContentDialogProps {
   isOpen: boolean;
   onClose: () => void;
   chunk: DocumentChunkDetail | null;
+  documentTitle?: string | null; // Add optional documentTitle prop
   isLoading: boolean;
 }
 
-const ChunkContentDialog: React.FC<ChunkContentDialogProps> = ({ isOpen, onClose, chunk, isLoading }) => {
+const ChunkContentDialog: React.FC<ChunkContentDialogProps> = ({ isOpen, onClose, chunk, documentTitle, isLoading }) => {
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={`Chunk Detail: ${chunk?.id?.substring(0, 8) ?? ''}...`}>
       {isLoading ? (
@@ -25,6 +26,15 @@ const ChunkContentDialog: React.FC<ChunkContentDialogProps> = ({ isOpen, onClose
           <div>
             <h3 className="font-semibold text-gray-800 dark:text-gray-200">Document ID:</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 break-all">{chunk.document_id}</p>
+          </div>
+          {/* Display Document Title if available */}
+          {documentTitle && (
+            <div>
+              <h3 className="font-semibold text-gray-800 dark:text-gray-200">Document Title:</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{documentTitle}</p>
+            </div>
+          )}
+          <div>
           </div>
           <div>
             <h3 className="font-semibold text-gray-800 dark:text-gray-200">Chunk Index:</h3>

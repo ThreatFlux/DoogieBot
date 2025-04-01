@@ -30,6 +30,7 @@ const DocumentReferences: React.FC<DocumentReferencesProps> = ({ documentIds }) 
   // State for chunk detail dialog
   const [showChunkDialog, setShowChunkDialog] = useState(false);
   const [selectedChunkDetail, setSelectedChunkDetail] = useState<DocumentChunkDetail | null>(null);
+  const [selectedDocumentTitle, setSelectedDocumentTitle] = useState<string | null>(null); // Add state for title
   const [isLoadingChunkDetail, setIsLoadingChunkDetail] = useState(false);
   const [chunkDetailError, setChunkDetailError] = useState<string | null>(null);
 
@@ -84,9 +85,15 @@ const DocumentReferences: React.FC<DocumentReferencesProps> = ({ documentIds }) 
   // Handler to fetch and show chunk content
   const handleViewChunkContent = async (chunkId: string) => {
     setSelectedChunkDetail(null);
+    setSelectedDocumentTitle(null); // Clear previous title
     setIsLoadingChunkDetail(true);
     setChunkDetailError(null); // Clear previous errors
     setShowChunkDialog(true);
+
+    // Get the title from the already fetched chunkInfo state
+    const title = chunkInfo[chunkId]?.documentTitle;
+    setSelectedDocumentTitle(title || null); // Set the title state
+
     try {
       const { chunk, error } = await getChunkDetail(chunkId);
       if (error) {
@@ -156,6 +163,7 @@ const DocumentReferences: React.FC<DocumentReferencesProps> = ({ documentIds }) 
         isOpen={showChunkDialog}
         onClose={() => setShowChunkDialog(false)}
         chunk={selectedChunkDetail}
+        documentTitle={selectedDocumentTitle} // Pass title to dialog
         isLoading={isLoadingChunkDetail}
       />
       {/* Display error fetching chunk detail if any */}
