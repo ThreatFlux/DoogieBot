@@ -152,17 +152,20 @@ class DocumentParser:
     @staticmethod
     def parse_json(file_path: str) -> Tuple[str, Dict[str, Any]]:
         """
-        Parse a JSON file and return the text content and metadata.
+        Parse a JSON file and return the text content and metadata,
+        including the parsed JSON structure in the metadata.
         """
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         
-        # Convert JSON to string for indexing
-        text = json.dumps(data, indent=2)
+        # Convert JSON to a compact string for the main 'content' field
+        # Using separators=(',', ':') creates the most compact valid JSON string
+        text = json.dumps(data, separators=(',', ':'))
         
         metadata = {
             "format": "json",
-            "keys": list(data.keys()) if isinstance(data, dict) else []
+            "keys": list(data.keys()) if isinstance(data, dict) else [],
+            "parsed_json": data  # Add the raw parsed data here
         }
         
         return text, metadata
