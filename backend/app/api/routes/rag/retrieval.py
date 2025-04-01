@@ -64,7 +64,7 @@ async def get_chunk_info(
     Get information about a document chunk, including its document ID and title.
     """
     # Get the chunk
-    chunk = DocumentService.get_chunk(db, chunk_id)
+    chunk = DocumentService.get_chunk_detail(db, chunk_id) # Corrected method name
     if not chunk:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
