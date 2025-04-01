@@ -18,4 +18,6 @@ api_router.include_router(llm.router, prefix="/llm", tags=["llm"])
 api_router.include_router(tags.router, prefix="/tags", tags=["tags"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(embedding.router, prefix="/embedding", tags=["embedding"])
+print("--- DEBUG: Including reranking router in api_router ---") # Add print
 api_router.include_router(reranking.router, prefix="/reranking", tags=["reranking"])
+print("--- DEBUG: Finished including reranking router ---") # Add print

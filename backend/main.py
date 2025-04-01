@@ -109,7 +109,9 @@ async def health_check():
 
 # Include API router
 from app.api.api import api_router
+print(f"--- DEBUG: Including main api_router with prefix: {settings.API_V1_STR} ---") # Add print
 app.include_router(api_router, prefix=settings.API_V1_STR)
+print("--- DEBUG: Finished including main api_router ---") # Add print
 
 # Error handlers
 @app.exception_handler(HTTPException)
