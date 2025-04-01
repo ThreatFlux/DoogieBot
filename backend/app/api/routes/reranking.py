@@ -105,41 +105,49 @@ class RerankingProviderInfo(BaseModel):
 class RerankingProviderResponse(BaseModel):
     providers: List[RerankingProviderInfo]
 
-@router.get("/providers", response_model=RerankingProviderResponse)
-def get_reranking_providers(
-    current_user: User = Depends(get_current_admin_user)
-):
-    """Get available reranking providers."""
-    # Start with providers known to have rerank APIs (or potential ones)
-    # Example: Add Cohere if/when implemented
-    known_providers = {
-        # "cohere": {"name": "Cohere", "requires_api_key": True, "requires_base_url": False},
-    }
+# @router.get("/providers", response_model=RerankingProviderResponse)
+# def get_reranking_providers(
+#     current_user: User = Depends(get_current_admin_user)
+# ):
+#     """Get available reranking providers."""
+#     # Start with providers known to have rerank APIs (or potential ones)
+#     # Example: Add Cohere if/when implemented
+#     known_providers = {
+#         # "cohere": {"name": "Cohere", "requires_api_key": True, "requires_base_url": False},
+#     }
+#
+#     # Add our special "local" provider for sentence-transformers
+#     known_providers["local"] = {
+#         "name": "Local (SentenceTransformers)",
+#         "requires_api_key": False, # Not needed for local loading
+#         "requires_base_url": False # Not needed for local loading
+#     }
+#
+#     # Optionally include providers from LLMFactory if they *might* support reranking via embeddings/future methods
+#     # Or keep it strictly to known/intended rerankers
+#     # For now, let's just list 'local' and potential dedicated ones
+#     # llm_providers = LLMFactory.get_available_providers()
+#     # for provider_id, details in llm_providers.items():
+#     #     if provider_id not in known_providers:
+#     #         # Decide if we want to list general LLM providers here too
+#     #         pass
+#
+#
+#     provider_list = [
+#         RerankingProviderInfo(
+#             id=pid,
+#             name=pinfo["name"],
+#             requires_api_key=pinfo["requires_api_key"],
+#             requires_base_url=pinfo["requires_base_url"]
+#         ) for pid, pinfo in known_providers.items()
+#     ]
+#
+#     return RerankingProviderResponse(providers=provider_list)
 
-    # Add our special "local" provider for sentence-transformers
-    known_providers["local"] = {
-        "name": "Local (SentenceTransformers)",
-        "requires_api_key": False, # Not needed for local loading
-        "requires_base_url": False # Not needed for local loading
-    }
-
-    # Optionally include providers from LLMFactory if they *might* support reranking via embeddings/future methods
-    # Or keep it strictly to known/intended rerankers
-    # For now, let's just list 'local' and potential dedicated ones
-    # llm_providers = LLMFactory.get_available_providers()
-    # for provider_id, details in llm_providers.items():
-    #     if provider_id not in known_providers:
-    #         # Decide if we want to list general LLM providers here too
-    #         pass
-
-
-    provider_list = [
-        RerankingProviderInfo(
-            id=pid,
-            name=pinfo["name"],
-            requires_api_key=pinfo["requires_api_key"],
-            requires_base_url=pinfo["requires_base_url"]
-        ) for pid, pinfo in known_providers.items()
-    ]
-
-    return RerankingProviderResponse(providers=provider_list)
+# Temporarily replace the get_reranking_providers function for debugging
+@router.get("/providers") # Removed response_model and dependencies
+async def get_reranking_providers_test():
+    """Test endpoint for reranking providers."""
+    # Add a print statement to see if the function is ever reached
+    print("--- DEBUG: /reranking/providers endpoint was hit ---")
+    return {"providers": [{"id": "local", "name": "Local Test", "requires_api_key": False, "requires_base_url": False}]}
