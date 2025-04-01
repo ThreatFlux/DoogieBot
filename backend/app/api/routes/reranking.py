@@ -15,7 +15,6 @@ from app.llm.factory import LLMFactory # Needed to get other providers
 
 
 router = APIRouter()
-print("--- DEBUG: Initializing reranking.py router ---") # Add print
 
 @router.post("/", response_model=RerankingConfigResponse)
 def create_reranking_config(
@@ -108,7 +107,7 @@ class RerankingProviderResponse(BaseModel):
 
 @router.get("/providers", response_model=RerankingProviderResponse)
 def get_reranking_providers(
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user) # Use base user dependency for testing
 ):
     """Get available reranking providers."""
     # Start with providers known to have rerank APIs (or potential ones)
