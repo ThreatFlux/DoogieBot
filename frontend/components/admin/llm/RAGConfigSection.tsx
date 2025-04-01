@@ -101,12 +101,12 @@ export const RAGConfigSection: React.FC<RAGConfigSectionProps> = ({
               <Input
                 type="number"
                 min="1"
-                max="20"
+                max="50" // Increased max limit to 50
                 className="flex-1"
                 value={topK}
                 onChange={(e) => {
                   const value = parseInt(e.target.value);
-                  if (value >= 1 && value <= 20) {
+                  if (value >= 1 && value <= 50) { // Updated validation to 50
                     setTopK(value);
                   }
                 }}
