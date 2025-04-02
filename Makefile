@@ -252,6 +252,8 @@ sync:
 
 # Debug target to build, wait, check logs, and run fetch test with local server
 debug:
+	@echo docker compose down 
+	docker compose down
 	@echo "${YELLOW}Starting debug sequence...${NC}"
 	@echo "${YELLOW}Starting local HTTP server on port 8888...${NC}"
 	@python3 -m http.server 8888 & export HTTP_PID=$$!; \

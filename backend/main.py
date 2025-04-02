@@ -14,6 +14,9 @@ from app.rag.singleton import rag_singleton
 from app.utils.middleware import TrailingSlashMiddleware
 from contextlib import asynccontextmanager
 
+# Import the session manager instance
+from app.services.mcp_config_service.manager import mcp_session_manager
+
 # Setup logger
 logger = logging.getLogger(__name__)
 
@@ -37,10 +40,10 @@ async def lifespan(app: FastAPI):
     try:
         # Initialize the database (create tables if they don't exist)
         init_db()
-        print("Database tables initialized")
+        logger.info("Database tables initialized")
     except Exception as e:
-        print(f"Error initializing database tables: {str(e)}")
-        print("This may be due to database connection issues. Will continue and try again later.")
+        logger.error(f"Error initializing database tables: {str(e)}")
+        logger.warning("This may be due to database connection issues. Will continue and try again later.")
     
     # Get DB session
     db = next(get_db())
@@ -76,53 +79,53 @@ async def lifespan(app: FastAPI):
                     );
                     """)
                     conn.commit()
-                    print("Users table created manually.")
+                    logger.info("Users table created manually.")
                 
                 conn.close()
             except Exception as e:
-                print(f"Error creating users table manually: {str(e)}")
+                logger.error(f"Error creating users table manually: {str(e)}")
             
             try:
                 admin_user = UserService.create_first_admin(db, admin_email, admin_password)
                 if admin_user:
-                    print(f"Created first admin user: {admin_email}")
+                    logger.info(f"Created first admin user: {admin_email}")
                 else:
-                    print("Admin user already exists, skipping creation")
+                    logger.info("Admin user already exists, skipping creation")
             except Exception as e:
-                print(f"Error creating admin user: {str(e)}")
-                print("Will create admin user on first successful database connection.")
+                logger.error(f"Error creating admin user: {str(e)}")
+                logger.warning("Will create admin user on first successful database connection.")
         else:
-            print("Admin credentials not provided, skipping admin user creation")
+            logger.info("Admin credentials not provided, skipping admin user creation")
         
         # Create default LLM configuration if needed
         try:
             default_config = LLMConfigService.create_default_config_if_needed(db)
             if default_config:
-                print(f"Created default LLM configuration with provider: {default_config.provider}")
+                logger.info(f"Created default LLM configuration with provider: {default_config.provider}")
             else:
-                print("LLM configuration already exists, skipping creation")
+                logger.info("LLM configuration already exists, skipping creation")
         except Exception as e:
-            print(f"Error creating default LLM configuration: {str(e)}")
-            print("Will create default LLM configuration on first successful database connection.")
+            logger.error(f"Error creating default LLM configuration: {str(e)}")
+            logger.warning("Will create default LLM configuration on first successful database connection.")
     except Exception as e:
         # If there's an error (like missing tables), log it but continue
-        print(f"Error during startup initialization: {str(e)}")
-        print("This may be due to database not being fully initialized yet. The application will retry on first request.")
+        logger.error(f"Error during startup initialization: {str(e)}")
+        logger.warning("This may be due to database not being fully initialized yet. The application will retry on first request.")
     
     # Initialize RAG singleton only if not already initialized
     if not _rag_initialized:
-        print("Initializing RAG components (first worker)...")
+        logger.info("Initializing RAG components (first worker)...")
         # Set the flag before initializing to prevent other workers from initializing
         _rag_initialized = True
         # Initialize with minimal loading - we'll load components on demand
         try:
             # Don't actually load the components yet, just set up the singleton
             # The actual loading will happen when the components are first accessed
-            print("RAG singleton initialized, components will be loaded on demand")
+            logger.info("RAG singleton initialized, components will be loaded on demand")
         except Exception as e:
-            print(f"Error initializing RAG singleton: {str(e)}")
+            logger.error(f"Error initializing RAG singleton: {str(e)}")
     else:
-        print("RAG singleton already initialized by another worker")
+        logger.info("RAG singleton already initialized by another worker")
 
     # --- Start enabled MCP servers ---
     try:
@@ -158,7 +161,16 @@ async def lifespan(app: FastAPI):
     yield  # This is where the app runs
 
     # Shutdown logic (after yield)
-    # Add any cleanup code here if needed
+    logger.info("Starting application shutdown sequence...")
+    # Close all managed MCP sessions
+    try:
+        logger.info("Closing MCP sessions...")
+        await mcp_session_manager.close_all_sessions()
+        logger.info("MCP sessions closed.")
+    except Exception as e:
+        logger.exception(f"Error during MCP session shutdown: {e}")
+    # Add any other cleanup code here if needed
+    logger.info("Application shutdown sequence complete.")
 
 # Create the FastAPI app
 app = FastAPI(

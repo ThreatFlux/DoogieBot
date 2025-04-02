@@ -70,6 +70,7 @@ dependencies = [
 
     # Docker
     "docker>=7.1.0",
+    "mcp>=1.6.0", # Added MCP SDK dependency
 ]
 
 [project.optional-dependencies]

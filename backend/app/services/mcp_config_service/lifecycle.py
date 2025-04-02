@@ -69,6 +69,7 @@ def start_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
             logger.info(f"Proceeding to create and start a new container '{container_name}'.")
             # Create a new container
             env_vars = db_config.config.get("env", {}) or {}
+            env_vars['DEBUG'] = '1'  # Enable debug logging in MCP container
             command = db_config.config.get("command", "docker")
             args = db_config.config.get("args", [])
             docker_args = _transform_command_to_docker(command, args)
@@ -146,8 +147,20 @@ def start_server(db: Session, config_id: str) -> Optional[MCPServerStatus]:
                 else: i += 1
 
             run_kwargs['detach'] = True
-            # Respect auto_remove if set via --rm
+            run_kwargs['auto_remove'] = False # Explicitly disable auto-remove for debugging/restarts
             run_kwargs['name'] = container_name
+            run_kwargs['restart_policy'] = {"Name": "always"} # Ensure container restarts
+
+            # --- Explicitly set stream attach options ---
+            # Ensure stdin is open and attachable (usually handled by -i mapping)
+            if 'stdin_open' not in run_kwargs:
+                run_kwargs['stdin_open'] = True
+            # Explicitly enable attaching stdout and stderr for reading responses/errors
+            run_kwargs['stdout'] = True
+            run_kwargs['stderr'] = True
+            # Ensure TTY is false for stream demultiplexing
+            run_kwargs['tty'] = False
+            # --- End stream attach options ---
 
             # --- Check for existing container AGAIN before run --- (Final idempotency check)
             try:

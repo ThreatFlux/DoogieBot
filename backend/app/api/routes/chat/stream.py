@@ -30,17 +30,16 @@ async def handle_stream_completion(state: Dict[str, Any]):
     logger = logging.getLogger(__name__) # Re-get logger in async context
     logger.info(f"Background task started for chat {state.get('chat_id')}")
     # --- Debugging: Log received state ---
-    logger.info(f"Background task state received: tool_call_occurred={state.get('tool_call_occurred')}, accumulated_tool_calls={state.get('accumulated_tool_calls')}, final_tool_calls_list={state.get('final_tool_calls_list')}")
+    logger.info(f"Background task state received: tool_call_occurred={state.get('tool_call_occurred')}, final_tool_calls_list={state.get('final_tool_calls_list')}")
     # --- End Debugging ---
 
     chat_id = state.get("chat_id")
     full_content = state.get("full_content", "")
     tool_call_occurred = state.get("tool_call_occurred", False)
-    # accumulated_tool_calls = state.get("accumulated_tool_calls", {}) # No longer needed for logic
     prompt_tokens = state.get("prompt_tokens", 0)
     completion_tokens = state.get("completion_tokens", 0)
     finish_reason = state.get("finish_reason")
-    first_stream_yielded_final = state.get("first_stream_yielded_final", False)
+    first_stream_yielded_final = state.get("first_stream_yielded_final", False) # Check if first stream finished
     current_model = state.get("current_model")
     current_provider = state.get("current_provider")
     start_time = state.get("start_time")
@@ -58,8 +57,8 @@ async def handle_stream_completion(state: Dict[str, Any]):
 
     try:
         with SessionLocal() as db: # Use a new session for the background task
-            # --- Save Tool Call Message using pre-computed list ---
-            if tool_call_occurred and final_tool_calls_list: # Use final_tool_calls_list from state
+            # --- Save Assistant Message (either simple or with tool calls) ---
+            if tool_call_occurred and final_tool_calls_list:
                 # Validate the pre-computed list
                 if all(call.get("id") and call.get("function", {}).get("name") for call in final_tool_calls_list):
                     logger.info(f"Attempting to save assistant message with {len(final_tool_calls_list)} tool calls (using pre-computed list)...")
@@ -83,19 +82,10 @@ async def handle_stream_completion(state: Dict[str, Any]):
                          logger.exception(f"Error saving assistant message with tool calls (background): {save_err}")
                 else:
                     logger.error("Assembled tool calls list failed validation (background). Not saving.")
-
-            # --- Handle Stream End (Check new flag) ---
-            elif not state.get("first_stream_completed_normally", False): # Check the new flag
-                 logger.warning(f"First stream for chat {chat_id} did not complete normally (background).")
-                 if full_content: # Save if content exists, even if stream didn't finish normally
-                     ChatService.add_message(db, chat_id, "assistant", full_content, finish_reason=finish_reason or "incomplete", model=current_model, provider=current_provider)
-                 return # Don't proceed to multi-turn
-
-            # --- Save Simple Content Response ---
-            elif full_content and not tool_call_occurred:
+            elif full_content and not tool_call_occurred: # Save simple content response
                 logger.debug(f"Saving final simple content message for chat {chat_id} (background).")
-                total_tokens_final = prompt_tokens + completion_tokens
-                tokens_per_second_final = completion_tokens / (time.time() - start_time) if completion_tokens and (time.time() - start_time) > 0 else 0.0
+                total_tokens_final = prompt_tokens + completion_tokens if first_stream_yielded_final else 0
+                tokens_per_second_final = completion_tokens / (time.time() - start_time) if first_stream_yielded_final and completion_tokens and (time.time() - start_time) > 0 else 0.0
                 ChatService.add_message(
                     db, chat_id, "assistant", full_content,
                     tokens=total_tokens_final, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
@@ -106,6 +96,11 @@ async def handle_stream_completion(state: Dict[str, Any]):
                 assistant_message_saved = True # Mark as saved even if simple content
             elif not full_content and not tool_call_occurred:
                  logger.debug(f"No content and no tool calls generated in the first stream for chat {chat_id} (background), not saving message.")
+            elif not state.get("first_stream_completed_normally", False): # Check if stream ended abnormally
+                 logger.warning(f"First stream for chat {chat_id} did not complete normally (background).")
+                 if full_content: # Save if content exists, even if stream didn't finish normally
+                     ChatService.add_message(db, chat_id, "assistant", full_content, finish_reason=finish_reason or "incomplete", model=current_model, provider=current_provider)
+                 return # Don't proceed to multi-turn if stream was abnormal
 
             # --- Multi-Turn Logic: Execute Tools if Needed ---
             if tool_call_occurred and saved_tool_calls_list:
@@ -145,11 +140,12 @@ async def handle_stream_completion(state: Dict[str, Any]):
                     else:
                         # Execute in thread within the async background task
                         tool_execution_tasks.append(
-                            asyncio.to_thread(
-                                execute_mcp_tool, # Use imported function
-                                # db=db, # Let execute_mcp_tool handle session creation
-                                config_id=config_id, tool_call_id=tool_call_id,
-                                tool_name=full_tool_name, arguments_str=arguments_str
+                            # Directly await the async function
+                            execute_mcp_tool(
+                                config_id=config_id,
+                                tool_call_id=tool_call_id,
+                                tool_name=full_tool_name,
+                                arguments_str=arguments_str
                             )
                         )
 
@@ -159,14 +155,21 @@ async def handle_stream_completion(state: Dict[str, Any]):
                      logger.info(f"asyncio.gather completed. Outcomes: {execution_outcomes}") # Log raw outcomes
 
                      # --- Map outcomes back to original tool calls ---
-                     # Create a list of tool calls that actually resulted in a task being created
                      tasks_to_calls_map = [
                          tc for tc in saved_tool_calls_list
                          if configs_map.get(tc.get("function", {}).get("name", "").split("__")[0])
                      ]
                      # ---
 
-                     for i, outcome in enumerate(execution_outcomes):
+                     # --- Added Logging: Before processing outcomes ---
+                     logger.info(f"Processing {len(execution_outcomes)} tool execution outcomes...") # CORRECT INDENTATION
+                     # ---
+
+                     for i, outcome in enumerate(execution_outcomes): # CORRECT INDENTATION
+                         # --- Added Logging: Log each outcome ---
+                         logger.debug(f"Outcome {i}: {outcome}") # CORRECT INDENTATION
+                         # ---
+
                          if i < len(tasks_to_calls_map):
                              original_call_info = tasks_to_calls_map[i]
                          else:
@@ -183,8 +186,11 @@ async def handle_stream_completion(state: Dict[str, Any]):
                          else:
                               # Check if the outcome (which should be the dict from execute_mcp_tool) contains 'result'
                               if isinstance(outcome, dict) and "result" in outcome:
+                                   # --- Added Logging: Log the raw result before potential JSON parsing ---
+                                   logger.debug(f"Raw 'result' field from outcome for {tool_call_id}: {outcome['result']}")
+                                   # ---
                                    tool_result_content_str = outcome["result"] # Use the result directly
-                                   logger.debug(f"Tool {full_tool_name} (ID: {tool_call_id}) executed successfully. Result: {tool_result_content_str[:100]}...")
+                                   logger.debug(f"Tool {full_tool_name} (ID: {tool_call_id}) executed successfully. Result content preview: {str(tool_result_content_str)[:100]}...")
                               else:
                                    logger.error(f"Tool execution for {full_tool_name} (ID: {tool_call_id}) did not return a valid dictionary with 'result'. Outcome: {outcome}")
                                    tool_result_content_str = json.dumps({"error": {"message": "Tool execution failed to produce a valid result dictionary."}})
@@ -193,7 +199,7 @@ async def handle_stream_completion(state: Dict[str, Any]):
                          tool_results_messages.append(tool_message_for_llm)
 
                          # --- Add logging around saving tool message ---
-                         logger.debug(f"Attempting to save tool message to DB for tool_call_id: {tool_call_id}")
+                         logger.info(f"Attempting to save tool message to DB for tool_call_id: {tool_call_id}. Content preview: {str(tool_result_content_str)[:100]}...") # Log content preview
                          try:
                              saved_tool_msg = ChatService.add_message(db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
                              if saved_tool_msg and saved_tool_msg.id:
@@ -204,62 +210,60 @@ async def handle_stream_completion(state: Dict[str, Any]):
                              logger.exception(f"Error saving tool message to DB for tool_call_id: {tool_call_id}: {tool_save_err}")
                          # --- End logging ---
 
-            # Start Second Streaming Call with Tool Results (Non-streaming in background)
-            current_messages.extend(tool_results_messages)
-            logger.info(f"Sending {len(tool_results_messages)} tool results back to LLM for chat {chat_id} (background).")
+                # Start Second Streaming Call with Tool Results (Non-streaming in background)
+                current_messages.extend(tool_results_messages)
+                logger.info(f"Sending {len(tool_results_messages)} tool results back to LLM for chat {chat_id} (background).")
 
-            # Need to recreate the LLM client for the second call
-            # Use LLMConfigService to get the active config
-            from app.services.llm_config import LLMConfigService # Add import
-            llm_config = LLMConfigService.get_active_config(db) # Correct service and method
-            if not llm_config:
-                logger.error(f"Could not find active LLM config (background).") # Removed user_id from log
-                return
+                # Need to recreate the LLM client for the second call
+                from app.services.llm_config import LLMConfigService # Add import
+                llm_config = LLMConfigService.get_active_config(db) # Correct service and method
+                if not llm_config:
+                    logger.error(f"Could not find active LLM config (background).") # Removed user_id from log
+                    return
 
-            chat_client = LLMFactory.create_client( # Corrected call
-                provider=llm_config.provider,
-                model=llm_config.model,
-                api_key=llm_config.api_key,
-                base_url=llm_config.base_url,
-                # api_version is not a standard field in LLMConfig or needed by factory here
-                user_id=user_id
-            )
-            
-            second_generate_args = {
-                "messages": current_messages, "temperature": temperature,
-                "max_tokens": max_tokens, "stream": False # Non-streaming call
-            }
-        if isinstance(chat_client, (AnthropicClient, GoogleGeminiClient)):
-             second_generate_args["system_prompt"] = system_prompt
+                chat_client = LLMFactory.create_client( # Corrected call
+                    provider=llm_config.provider,
+                    model=llm_config.model,
+                    api_key=llm_config.api_key,
+                    base_url=llm_config.base_url,
+                    user_id=user_id
+                )
 
-        second_response = await chat_client.generate(**second_generate_args)
-        logger.debug("Got second response (background)")
+                second_generate_args = {
+                    "messages": current_messages, "temperature": temperature,
+                    "max_tokens": max_tokens, "stream": False # Non-streaming call
+                }
+                if isinstance(chat_client, (AnthropicClient, GoogleGeminiClient)):
+                     second_generate_args["system_prompt"] = system_prompt
 
-        # Process Second Response (Non-streaming)
-        second_full_content = second_response.get("content", "")
-        second_usage = second_response.get("usage", {})
-        second_prompt_tokens = second_usage.get("prompt_tokens", 0)
-        second_completion_tokens = second_usage.get("completion_tokens", 0)
-        second_total_tokens = second_usage.get("total_tokens", second_prompt_tokens + second_completion_tokens)
-        second_finish_reason = second_response.get("finish_reason")
+                second_response = await chat_client.generate(**second_generate_args)
+                logger.debug("Got second response (background)")
 
-        if second_full_content:
-             logger.debug(f"Attempting to save final message after tool execution for chat {chat_id} (background).")
-             try:
-                 saved_final_msg = ChatService.add_message(
-                     db, chat_id, "assistant", second_full_content,
-                     tokens=second_total_tokens, prompt_tokens=second_prompt_tokens, completion_tokens=second_completion_tokens,
-                     model=current_model, provider=current_provider, # Use model/provider from first call? Or second?
-                     finish_reason=second_finish_reason
-                 )
-                 if saved_final_msg and saved_final_msg.id:
-                      logger.info(f"Successfully saved final assistant message (ID: {saved_final_msg.id}) after tool execution for chat {chat_id} (background).")
-                 else:
-                      logger.error(f"Failed to save final assistant message after tool execution for chat {chat_id} (add_message returned None or no ID).")
-             except Exception as final_save_err:
-                  logger.exception(f"Error saving final assistant message after tool execution for chat {chat_id}: {final_save_err}")
-        else:
-            logger.warning("Second LLM call after tool execution resulted in no content (background).")
+                # Process Second Response (Non-streaming)
+                second_full_content = second_response.get("content", "")
+                second_usage = second_response.get("usage", {})
+                second_prompt_tokens = second_usage.get("prompt_tokens", 0)
+                second_completion_tokens = second_usage.get("completion_tokens", 0)
+                second_total_tokens = second_usage.get("total_tokens", second_prompt_tokens + second_completion_tokens)
+                second_finish_reason = second_response.get("finish_reason")
+
+                if second_full_content:
+                     logger.debug(f"Attempting to save final message after tool execution for chat {chat_id} (background).")
+                     try:
+                         saved_final_msg = ChatService.add_message(
+                             db, chat_id, "assistant", second_full_content,
+                             tokens=second_total_tokens, prompt_tokens=second_prompt_tokens, completion_tokens=second_completion_tokens,
+                             model=current_model, provider=current_provider, # Use model/provider from first call? Or second?
+                             finish_reason=second_finish_reason
+                         )
+                         if saved_final_msg and saved_final_msg.id:
+                              logger.info(f"Successfully saved final assistant message (ID: {saved_final_msg.id}) after tool execution for chat {chat_id} (background).")
+                         else:
+                              logger.error(f"Failed to save final assistant message after tool execution for chat {chat_id} (add_message returned None or no ID).")
+                     except Exception as final_save_err:
+                          logger.exception(f"Error saving final assistant message after tool execution for chat {chat_id}: {final_save_err}")
+                else:
+                    logger.warning("Second LLM call after tool execution resulted in no content (background).")
 
     except Exception as bg_err:
         # Add more detail to the final exception log
@@ -349,8 +353,8 @@ async def stream_from_llm(
                     # --- End capture ---
 
                     # Yield other chunks to the client
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    last_sent_time = current_time # Update last sent time after yielding
+                    # yield f"data: {json.dumps(chunk)}\n\n" # Duplicate yield removed
+                    # last_sent_time = current_time # Update last sent time after yielding
 
                     if chunk_count % 10 == 0 or chunk.get("done", False): # Keep original logging condition
                         logger_inner.debug(f"Streaming chunk {chunk_count}: {chunk.get('content', '')[:30]}... (done: {chunk.get('done', False)})")
@@ -375,9 +379,6 @@ async def stream_from_llm(
                          last_sent_time = current_time
 
                 logger_inner.debug(f"Finished streaming {chunk_count} chunks for chat {chat_id}")
-
-                # Removed the check for completion_state["first_stream_yielded_final"]
-                # The finally block below will handle yielding the internal state
 
             except asyncio.TimeoutError: # Catch timeout from underlying client if applicable
                 logger_inner.error(f"Timeout during LLM interaction for chat {chat_id}")
@@ -429,7 +430,6 @@ async def stream_from_llm_get(
     request: Request, # Use Request object to get query params
     chat_id: str,
     background_tasks: BackgroundTasks, # Added BackgroundTasks
-    # content: str, # Content will be a query parameter
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_stream), # Use stream-compatible auth
 ) -> StreamingResponse:
@@ -515,8 +515,8 @@ async def stream_from_llm_get(
                     # --- End capture ---
 
                     # Yield other chunks to the client
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    last_sent_time = current_time # Update last sent time after yielding
+                    # yield f"data: {json.dumps(chunk)}\n\n" # Duplicate yield removed
+                    # last_sent_time = current_time # Update last sent time after yielding
 
                     if chunk_count % 10 == 0 or chunk.get("done", False): # Keep original logging condition
                         logger_inner.debug(f"Streaming chunk {chunk_count} (GET): {chunk.get('content', '')[:30]}... (done: {chunk.get('done', False)})")
@@ -541,9 +541,6 @@ async def stream_from_llm_get(
                          last_sent_time = current_time
 
                 logger_inner.debug(f"Finished streaming {chunk_count} chunks for chat {chat_id} (GET)")
-
-                # Removed the check for completion_state["first_stream_yielded_final"]
-                # The finally block below will handle yielding the internal state
 
             except asyncio.TimeoutError:
                 logger_inner.error(f"Timeout during LLM interaction for chat {chat_id} (GET)")

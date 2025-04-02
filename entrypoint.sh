@@ -90,10 +90,10 @@ start_backend() {
     export PYTHONMALLOC=debug
     # Set memory limits
     export PYTHONWARNINGS=always
-    # Use a single worker with memory limits and run via uv
-    uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload --workers 1 --timeout-keep-alive 300 --timeout-graceful-shutdown 300 --log-level debug --limit-concurrency 20 --backlog 50 &
-    BACKEND_PID=$!
-    echo "Backend server started with PID: $BACKEND_PID"
+    # Use a single worker with memory limits, run uvicorn directly in foreground
+    uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload --workers 1 --timeout-keep-alive 300 --timeout-graceful-shutdown 300 --log-level debug --limit-concurrency 20 --backlog 50
+    # No backgrounding (&) or PID needed when running in foreground
+    echo "Backend server started in foreground."
 }
 
 # Function to prepare frontend dependencies
@@ -147,13 +147,16 @@ sleep 3
 # Prepare frontend before starting services
 prepare_frontend # Re-added this call
 
-# Start services
-start_backend
-echo "Waiting 5 seconds for backend to initialize..."
-sleep 5
+# Start frontend in background first
 start_frontend
+echo "Waiting 5 seconds for frontend to potentially build..."
+sleep 5
 
-# Handle shutdown
+# Start backend in foreground (this will block until stopped)
+start_backend
+
+# Shutdown handling might need adjustment if backend runs foreground
+# The trap should still work if the container receives SIGTERM/SIGINT
 shutdown() {
     echo "Shutting down services..."
     if [ ! -z "$BACKEND_PID" ]; then
@@ -168,6 +171,5 @@ shutdown() {
 # Trap SIGTERM and SIGINT
 trap shutdown SIGTERM SIGINT
 
-# Keep the container running
-echo "All services started. Container is now running..."
-wait
+# No need for 'wait' when backend runs in foreground
+echo "Backend running in foreground. Container will stay alive."
