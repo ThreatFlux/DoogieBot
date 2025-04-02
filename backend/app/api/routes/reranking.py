@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel # Add BaseModel import
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
@@ -11,8 +10,6 @@ from app.schemas.reranking import (
 from app.services.reranking_config import RerankingConfigService
 from app.utils.deps import get_db, get_current_admin_user
 from app.models.user import User
-from app.llm.factory import LLMFactory # Needed to get other providers
-
 
 router = APIRouter()
 
@@ -93,53 +90,3 @@ def delete_reranking_config(
     if not RerankingConfigService.delete_config(db, config_id):
         raise HTTPException(status_code=404, detail="Reranking configuration not found")
     return {"message": "Reranking configuration deleted"}
-
-
-# Define a simple response model for providers
-class RerankingProviderInfo(BaseModel):
-    id: str
-    name: str
-    requires_api_key: bool
-    requires_base_url: bool
-
-class RerankingProviderResponse(BaseModel):
-    providers: List[RerankingProviderInfo]
-
-@router.get("/providers", response_model=RerankingProviderResponse)
-def get_reranking_providers(
-    current_user: User = Depends(get_current_user) # Use base user dependency for testing
-):
-    """Get available reranking providers."""
-    # Start with providers known to have rerank APIs (or potential ones)
-    # Example: Add Cohere if/when implemented
-    known_providers = {
-        # "cohere": {"name": "Cohere", "requires_api_key": True, "requires_base_url": False},
-    }
-
-    # Add our special "local" provider for sentence-transformers
-    known_providers["local"] = {
-        "name": "Local (SentenceTransformers)",
-        "requires_api_key": False, # Not needed for local loading
-        "requires_base_url": False # Not needed for local loading
-    }
-
-    # Optionally include providers from LLMFactory if they *might* support reranking via embeddings/future methods
-    # Or keep it strictly to known/intended rerankers
-    # For now, let's just list 'local' and potential dedicated ones
-    # llm_providers = LLMFactory.get_available_providers()
-    # for provider_id, details in llm_providers.items():
-    #     if provider_id not in known_providers:
-    #         # Decide if we want to list general LLM providers here too
-    #         pass
-
-
-    provider_list = [
-        RerankingProviderInfo(
-            id=pid,
-            name=pinfo["name"],
-            requires_api_key=pinfo["requires_api_key"],
-            requires_base_url=pinfo["requires_base_url"]
-        ) for pid, pinfo in known_providers.items()
-    ]
-
-    return RerankingProviderResponse(providers=provider_list)

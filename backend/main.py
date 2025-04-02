@@ -6,10 +6,6 @@ import os
 import logging
 from pathlib import Path
 from sqlalchemy.orm import Session
-from typing import List # Add List import
-from pydantic import BaseModel # Add BaseModel import
-
-# Import necessary components for the new route
 from app.db.base import get_db
 from app.core.config import settings
 from app.services.user import UserService
@@ -17,9 +13,6 @@ from app.services.llm_config import LLMConfigService
 from app.rag.singleton import rag_singleton
 from app.utils.middleware import TrailingSlashMiddleware
 from contextlib import asynccontextmanager
-from app.utils.deps import get_current_admin_user # Import dependency
-from app.models.user import User # Import User model
-from app.llm.factory import LLMFactory # Import LLMFactory
 
 # Create the app directory if it doesn't exist
 app_dir = Path(__file__).parent / "app"
@@ -117,45 +110,6 @@ async def health_check():
 # Include API router
 from app.api.api import api_router
 app.include_router(api_router, prefix=settings.API_V1_STR)
-
-
-# --- Direct Route Definition for Debugging ---
-# Define response models directly here as they were in reranking.py
-class RerankingProviderInfo(BaseModel):
-    id: str
-    name: str
-    requires_api_key: bool
-    requires_base_url: bool
-
-class RerankingProviderResponse(BaseModel):
-    providers: List[RerankingProviderInfo]
-
-@app.get(f"{settings.API_V1_STR}/reranking/providers", response_model=RerankingProviderResponse, tags=["reranking"])
-def get_reranking_providers_main(
-    current_user: User = Depends(get_current_admin_user) # Use original dependency
-):
-    """Get available reranking providers (defined in main.py for debugging)."""
-    print("--- DEBUG: Direct /reranking/providers route in main.py hit ---") # Add debug print
-    # Start with providers known to have rerank APIs (or potential ones)
-    known_providers = {
-        # "cohere": {"name": "Cohere", "requires_api_key": True, "requires_base_url": False},
-    }
-    # Add our special "local" provider for sentence-transformers
-    known_providers["local"] = {
-        "name": "Local (SentenceTransformers)",
-        "requires_api_key": False,
-        "requires_base_url": False
-    }
-    provider_list = [
-        RerankingProviderInfo(
-            id=pid,
-            name=pinfo["name"],
-            requires_api_key=pinfo["requires_api_key"],
-            requires_base_url=pinfo["requires_base_url"]
-        ) for pid, pinfo in known_providers.items()
-    ]
-    return RerankingProviderResponse(providers=provider_list)
-# --- End Direct Route Definition ---
 
 # Error handlers
 @app.exception_handler(HTTPException)

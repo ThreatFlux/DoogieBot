@@ -16,7 +16,7 @@ run_migrations() {
 start_backend() {
     echo "Starting backend server in production mode..."
     cd /app/backend
-    uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 300 & # Temporarily set workers to 1 for debugging
+    uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 300 &
     BACKEND_PID=$!
     echo "Backend server started with PID: $BACKEND_PID"
 }

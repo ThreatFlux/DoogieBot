@@ -13,8 +13,7 @@ import {
   getLLMProviders,
   getAllLLMConfigs,
   getAllEmbeddingConfigs,
-  getAllRerankingConfigs,
-  getRerankingProviders // Import the new service function
+  getAllRerankingConfigs
 } from '../../services/llm';
 
 const LLMConfiguration: React.FC = () => {
@@ -24,7 +23,6 @@ const LLMConfiguration: React.FC = () => {
   const [chatConfigs, setChatConfigs] = useState<any[]>([]);
   const [embeddingConfigs, setEmbeddingConfigs] = useState<any[]>([]);
   const [rerankingConfigs, setRerankingConfigs] = useState<any[]>([]);
-  const [rerankingProviders, setRerankingProviders] = useState<any[]>([]); // State for reranking providers
   
   // State for active configs
   const [activeChatConfig, setActiveChatConfig] = useState<ChatConfig | null>(null); // Use ChatConfig type
@@ -108,13 +106,6 @@ const LLMConfiguration: React.FC = () => {
       
       const rerankingConfigsData = rerankingConfigsResponse.configs || [];
       setRerankingConfigs(rerankingConfigsData);
-
-      // Load reranking providers
-      const rerankingProvidersResponse = await getRerankingProviders();
-      if (rerankingProvidersResponse.error) {
-        throw new Error(rerankingProvidersResponse.error);
-      }
-      setRerankingProviders(rerankingProvidersResponse.providers || []);
 
       // Set active configs
       const activeChatConfig: ChatConfig | undefined = chatConfigsData.find((c: ChatConfig) => c.is_active); // Use ChatConfig type here
@@ -287,9 +278,7 @@ const LLMConfiguration: React.FC = () => {
               activeRerankingConfig={activeRerankingConfig}
               temperature={temperature} // Pass temperature state
               setTemperature={setTemperature} // Pass temperature setter
-              // Pass reranking providers separately
-              rerankingProviders={rerankingProviders}
-
+              
               // Callbacks
               onUpdate={loadData}
               setError={setError}

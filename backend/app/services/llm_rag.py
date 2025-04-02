@@ -11,94 +11,62 @@ from app.services.reranking_config import RerankingConfigService
 
 logger = logging.getLogger(__name__)
 
-from app.schemas.reranking import RerankingConfigInDB # Correct import
-from sentence_transformers import CrossEncoder # Import CrossEncoder
-
-# Cache for loaded CrossEncoder models
-_cross_encoder_cache: Dict[str, CrossEncoder] = {}
-
-async def _rerank_documents(reranking_config: RerankingConfigInDB, query: str, documents: List[str]) -> List[float]: # Correct type hint
+async def _rerank_documents(reranking_client: LLMClient, query: str, documents: List[str]) -> List[float]:
     """
-    Rerank documents based on their relevance to the query using a configured reranker.
-    Currently supports local CrossEncoder models loaded via sentence-transformers.
+    Rerank documents based on their relevance to the query.
 
     Args:
-        reranking_config: The active reranking configuration object.
+        reranking_client: LLM client capable of reranking or embedding.
         query: User query.
         documents: List of document contents to rerank.
 
     Returns:
-        List of relevance scores for each document, or empty list if reranking fails or is not supported.
+        List of relevance scores for each document.
     """
     if not documents:
         return []
 
-    # --- Local Cross-Encoder Reranking ---
-    # Check if the model name suggests a cross-encoder/reranker model
-    # This is a heuristic; ideally, the config would have a 'type' field.
-    model_name = reranking_config.model
-    if "rerank" in model_name.lower():
-        logger.info(f"Attempting local cross-encoder reranking using model: {model_name}")
-        try:
-            # Load model (with caching)
-            if model_name not in _cross_encoder_cache:
-                logger.info(f"Loading CrossEncoder model '{model_name}' into cache...")
-                # You might need to specify device='cuda' if GPU is available and configured
-                _cross_encoder_cache[model_name] = CrossEncoder(model_name, max_length=512) # max_length might need tuning
-                logger.info(f"Successfully loaded '{model_name}'.")
-            model = _cross_encoder_cache[model_name]
+    try:
+        # If the reranking client has a specific rerank method, use it
+        if hasattr(reranking_client, 'rerank'):
+            logger.info(f"Using dedicated rerank method for query: {query[:50]}...")
+            scores = await reranking_client.rerank(query, documents)
+            logger.debug(f"Raw rerank scores: {scores}")
+            return scores
 
-            # Prepare pairs for the cross-encoder
-            pairs: List[List[str]] = [[query, doc] for doc in documents]
-            logger.info(f"Predicting scores for {len(pairs)} query-document pairs...")
+        # Check if the client has embedding capabilities
+        if hasattr(reranking_client, 'get_embeddings'):
+            logger.info(f"Attempting reranking via embedding similarity for query: {query[:50]}...")
+            # Use embeddings to calculate similarity
+            try:
+                query_embedding = await reranking_client.get_embeddings([query])
+                if not query_embedding or len(query_embedding) == 0:
+                    logger.warning("Failed to generate query embedding for reranking")
+                    return []
 
-            # Predict scores - This is CPU/GPU intensive
-            # Consider running in a separate thread/process for async environments if it blocks
-            # For simplicity, running synchronously here.
-            # Use asyncio.to_thread in Python 3.9+ if blocking becomes an issue:
-            # scores = await asyncio.to_thread(model.predict, pairs, show_progress_bar=False) # show_progress_bar optional
-            scores = model.predict(pairs, show_progress_bar=False) # show_progress_bar optional
+                query_embedding = query_embedding[0]
 
-            logger.info(f"Successfully predicted {len(scores)} scores using local cross-encoder.")
-            # Ensure scores are float
-            scores_float = [float(score) for score in scores]
-            return scores_float
+                # Get embeddings for all documents
+                doc_embeddings = await reranking_client.get_embeddings(documents)
+                if not doc_embeddings or len(doc_embeddings) != len(documents):
+                    logger.warning(f"Failed to generate document embeddings for reranking: got {len(doc_embeddings) if doc_embeddings else 0} for {len(documents)} documents")
+                    return []
 
-        except ImportError:
-             logger.error("`sentence-transformers` library not found. Cannot perform local cross-encoder reranking. Please install it.")
-             return []
-        except Exception as e:
-            logger.error(f"Error during local cross-encoder reranking with model '{model_name}': {str(e)}", exc_info=True)
-            # If the model failed (e.g., not found locally, download error), remove from cache
-            if model_name in _cross_encoder_cache:
-                 del _cross_encoder_cache[model_name]
+                # TODO: Implement cosine similarity calculation if needed, or assume client handles it.
+                # For now, returning empty list if only embedding is available without explicit rerank.
+                logger.warning("Reranking via embedding similarity not fully implemented, returning original order.")
+                return []
+
+            except Exception as e:
+                logger.warning(f"Error using embeddings for reranking: {str(e)}")
+                # Return empty scores, will fall back to original ranking
+                return []
+        else:
+            logger.warning("Reranking client does not support embeddings, falling back to original ranking")
             return []
-    else:
-        # --- Fallback / Other Reranker Types (Placeholder) ---
-        logger.warning(f"Model '{model_name}' doesn't appear to be a known local cross-encoder format.")
-        logger.warning("Attempting fallback: Checking for dedicated client rerank method (e.g., Cohere)...")
 
-        # Placeholder: If we add other clients (like Cohere) with a .rerank method,
-        # we would instantiate the client here using reranking_config details
-        # and call its .rerank method.
-        # Example (if CohereClient existed):
-        # try:
-        #     client = LLMFactory._create_single_client(
-        #         provider=reranking_config.provider,
-        #         model=reranking_config.model,
-        #         api_key=reranking_config.api_key,
-        #         base_url=reranking_config.base_url
-        #     )
-        #     if hasattr(client, 'rerank'):
-        #          logger.info(f"Using dedicated rerank method for provider {reranking_config.provider}...")
-        #          scores = await client.rerank(query, documents)
-        #          return [float(s) for s in scores]
-        #     else:
-        #          logger.warning(f"Provider {reranking_config.provider} client has no dedicated rerank method.")
-        # except Exception as client_err:
-        #     logger.error(f"Failed to create or use client for provider {reranking_config.provider}: {client_err}")
-
-        logger.warning("No dedicated rerank method found or implemented for this configuration. Reranking skipped.")
+    except Exception as e:
+        logger.error(f"Unexpected error during reranking: {str(e)}")
         return []
 
 
@@ -173,49 +141,63 @@ async def get_rag_context(
             reranking_config = RerankingConfigService.get_active_config(db)
 
             if reranking_config:
-                documents_content = [doc["content"] for doc in context]
-                logger.info(f"--- Documents before reranking for query '{query[:50]}...' ---")
-                for i, doc in enumerate(context):
-                    logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Initial Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
-                logger.info("---------------------------------------------------------")
+                all_llm_configs = LLMConfigService.get_all_configs(db)
+                llm_config_for_reranker = next((c for c in all_llm_configs if c.provider == reranking_config.provider), None)
 
-                # Pass the config object, not a client
-                reranked_scores = await _rerank_documents(reranking_config, query, documents_content)
+                if llm_config_for_reranker:
+                    logger.info(f"Reranking results using dedicated config: {reranking_config.provider}/{reranking_config.model}")
+                    try:
+                        # Create reranking client
+                        reranking_client = LLMFactory._create_single_client(
+                            provider=reranking_config.provider,
+                            model=reranking_config.model,
+                            api_key=llm_config_for_reranker.api_key,
+                            base_url=llm_config_for_reranker.base_url
+                        )
 
-                if reranked_scores and len(reranked_scores) == len(context):
-                    for i, score in enumerate(reranked_scores):
-                        context[i]["score"] = score # Apply new scores
-                    context.sort(key=lambda x: x["score"], reverse=True) # Sort by new scores
-                    logger.info(f"Successfully reranked {len(context)} documents using '{reranking_config.model}'.")
-                    logger.info(f"--- Documents after reranking for query '{query[:50]}...' ---")
-                    for i, doc in enumerate(context):
-                        logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Reranked Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
-                    logger.info("--------------------------------------------------------")
+                        if not reranking_client:
+                            logger.warning("Failed to create reranking client using _create_single_client")
+                        else:
+                            documents = [doc["content"] for doc in context]
+                            logger.info(f"--- Documents before reranking for query '{query[:50]}...' ---")
+                            for i, doc in enumerate(context):
+                                logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Initial Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
+                            logger.info("---------------------------------------------------------")
+
+                            reranked_scores = await _rerank_documents(reranking_client, query, documents)
+
+                            if reranked_scores and len(reranked_scores) == len(context):
+                                for i, score in enumerate(reranked_scores):
+                                    context[i]["score"] = score
+                                context.sort(key=lambda x: x["score"], reverse=True)
+                                logger.info(f"Successfully reranked {len(context)} documents.")
+                                logger.info(f"--- Documents after reranking for query '{query[:50]}...' ---")
+                                for i, doc in enumerate(context):
+                                    logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Reranked Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
+                                logger.info("--------------------------------------------------------")
+
+                                # Apply reranked_top_n limit if set
+                                reranked_top_n = getattr(active_llm_config, 'reranked_top_n', None)
+                                if reranked_top_n is not None and reranked_top_n > 0:
+                                    if len(context) > reranked_top_n:
+                                        logger.info(f"Applying reranked_top_n limit: {reranked_top_n} (truncated from {len(context)})")
+                                        context = context[:reranked_top_n]
+                                    else:
+                                        logger.info(f"Reranked_top_n limit ({reranked_top_n}) is >= number of documents ({len(context)}), keeping all.")
+                                else:
+                                    logger.info("No reranked_top_n limit set or invalid value, keeping all reranked documents.")
+
+                            else:
+                                logger.warning(f"Reranking returned {len(reranked_scores) if reranked_scores else 0} scores for {len(context)} documents. Using original ranking.")
+                    except Exception as e:
+                        logger.error(f"Error during reranking process: {str(e)}")
                 else:
-                    logger.warning(f"Reranking process with '{reranking_config.model}' returned {len(reranked_scores) if reranked_scores else 0} scores for {len(context)} documents. Using original ranking.")
-            # If no dedicated reranking config is active, check the main LLM config flag
-            elif active_llm_config and active_llm_config.config and active_llm_config.config.get('use_reranking', False):
-                logger.warning("Reranking enabled in main LLM config, but no active dedicated reranking configuration found in the database. Skipping reranking.")
-
-        # Apply reranked_top_n limit AFTER reranking attempt (success or failure)
-        reranked_top_n = getattr(active_llm_config, 'reranked_top_n', None)
-        if reranked_top_n is not None and reranked_top_n > 0:
-            if len(context) > reranked_top_n:
-                logger.info(f"Applying final reranked_top_n limit: {reranked_top_n} (truncated from {len(context)})")
-                context = context[:reranked_top_n]
+                    logger.warning(f"Reranking enabled, active reranking config found ({reranking_config.provider}/{reranking_config.model}), but no matching LLM config found for provider '{reranking_config.provider}'. Cannot get API key/base URL. Skipping reranking.")
             else:
-                logger.info(f"Final reranked_top_n limit ({reranked_top_n}) is >= number of documents ({len(context)}), keeping all.")
-        else:
-            # If no specific limit, default to rag_top_k or the number retrieved if rag_top_k is also missing
-            final_limit = top_k # top_k was determined earlier from rag_top_k or default
-            if len(context) > final_limit:
-                logger.info(f"Applying default limit (rag_top_k): {final_limit} (truncated from {len(context)})")
-                context = context[:final_limit]
-            else:
-                logger.info(f"No reranked_top_n limit set, keeping all {len(context)} documents (within rag_top_k limit of {final_limit}).")
+                 if active_llm_config and active_llm_config.config and active_llm_config.config.get('use_reranking', False):
+                      logger.warning("Reranking enabled in main LLM config, but no active dedicated reranking configuration found in the database. Skipping reranking.")
 
         return context
-
     except Exception as e:
         logger.error(f"Error getting RAG context: {str(e)}")
         return None

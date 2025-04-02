@@ -1,4 +1,4 @@
-import { LLMConfig, LLMModel, LLMProvider, EmbeddingConfig, RerankingConfig, RerankingProvider } from '@/types'; // Add RerankingProvider
+import { LLMConfig, LLMModel, LLMProvider, EmbeddingConfig, RerankingConfig } from '@/types';
 import { get, post, put, del } from './api';
 
 // ======================
@@ -406,14 +406,4 @@ export const deleteRerankingConfig = async (configId: string): Promise<{ success
     return { error: fallbackResponse.error };
   }
   return { success: true };
-};
-
-// Get available reranking providers
-export const getRerankingProviders = async (): Promise<{ providers?: RerankingProvider[]; error?: string }> => {
-  // Use the new dedicated endpoint
-  const response = await get<{ providers: RerankingProvider[] }>('/reranking/providers');
-  if (response.error) {
-    return { error: response.error };
-  }
-  return { providers: response.data?.providers || [] };
 };
