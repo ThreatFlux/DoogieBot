@@ -8,8 +8,8 @@ import glob
 import zipfile
 from typing import List, Optional, Dict, Any, BinaryIO, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import func
-from fastapi import UploadFile
+from sqlalchemy import func, select
+from fastapi import UploadFile, HTTPException
 import json
 from pathlib import Path
 import git
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 class DocumentService:
     @staticmethod
     async def upload_document(
-        db: Session, 
-        file: UploadFile, 
+        db: Session,
+        file: UploadFile,
         user_id: str,
         title: Optional[str] = None
     ) -> Document:
@@ -33,11 +33,11 @@ class DocumentService:
         """
         # Generate unique ID for the document
         doc_id = str(uuid.uuid4())
-        
+
         # Determine document type from file extension
         file_ext = file.filename.split('.')[-1].lower()
         doc_type = None
-        
+
         if file_ext == 'pdf':
             doc_type = DocumentType.PDF
         elif file_ext == 'docx':
@@ -59,21 +59,21 @@ class DocumentService:
         else:
             # Default to text
             doc_type = DocumentType.TEXT
-        
+
         # Create uploads directory if it doesn't exist
         upload_dir = Path(settings.UPLOAD_DIR)
         upload_dir.mkdir(exist_ok=True)
-        
+
         # Save file to disk
         file_path = f"{settings.UPLOAD_DIR}/{doc_id}.{file_ext}"
-        
+
         # Read file content
         contents = await file.read()
-        
+
         # Write to disk
         with open(file_path, "wb") as f:
             f.write(contents)
-        
+
         # Create document record
         document = Document(
             id=doc_id,
@@ -84,13 +84,13 @@ class DocumentService:
             uploaded_by=user_id,
             meta_data={"original_filename": file.filename, "size": len(contents)}
         )
-        
+
         db.add(document)
         db.commit()
         db.refresh(document)
-        
+
         return document
-    
+
     @staticmethod
     def create_manual_document(
         db: Session,
@@ -103,7 +103,7 @@ class DocumentService:
         Create a manual document entry.
         """
         doc_id = str(uuid.uuid4())
-        
+
         document = Document(
             id=doc_id,
             filename=None,
@@ -113,20 +113,20 @@ class DocumentService:
             uploaded_by=user_id,
             meta_data=meta_data or {}
         )
-        
+
         db.add(document)
         db.commit()
         db.refresh(document)
-        
+
         return document
-    
+
     @staticmethod
     def get_document(db: Session, doc_id: str) -> Optional[Document]:
         """
         Get a document by ID.
         """
         return db.query(Document).filter(Document.id == doc_id).first()
-    
+
     @staticmethod
     def count_documents(
         db: Session,
@@ -137,15 +137,15 @@ class DocumentService:
         Count documents, optionally filtered by type and user.
         """
         query = db.query(Document)
-        
+
         if doc_type:
             query = query.filter(Document.type == doc_type)
-        
+
         if user_id:
             query = query.filter(Document.uploaded_by == user_id)
-        
+
         return query.count()
-    
+
     @staticmethod
     def get_documents(
         db: Session,
@@ -153,20 +153,44 @@ class DocumentService:
         limit: int = 100,
         doc_type: Optional[str] = None,
         user_id: Optional[str] = None
-    ) -> List[Document]:
+    ) -> Tuple[List[Document], int]:
         """
-        Get all documents, optionally filtered by type and user.
+        Get documents with chunk counts, optionally filtered by type and user.
+        Returns a tuple: (list of documents, total count).
         """
         query = db.query(Document)
-        
+
         if doc_type:
             query = query.filter(Document.type == doc_type)
-        
+
         if user_id:
             query = query.filter(Document.uploaded_by == user_id)
-        
-        return query.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
-    
+
+        total_count = query.count() # Get total count before applying limit/offset
+
+        documents = query.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+
+        # Get chunk counts efficiently
+        if documents:
+            doc_ids = [doc.id for doc in documents]
+            chunk_counts_query = (
+                select(DocumentChunk.document_id, func.count(DocumentChunk.id).label("chunk_count"))
+                .where(DocumentChunk.document_id.in_(doc_ids))
+                .group_by(DocumentChunk.document_id)
+            )
+            chunk_counts_result = db.execute(chunk_counts_query).fetchall()
+            chunk_counts_map = {row.document_id: row.chunk_count for row in chunk_counts_result}
+
+            # Add chunk_count to each document object
+            for doc in documents:
+                doc.chunk_count = chunk_counts_map.get(doc.id, 0)
+        else:
+             # Ensure chunk_count is set even if no documents are found
+            for doc in documents:
+                doc.chunk_count = 0
+
+        return documents, total_count
+
     @staticmethod
     def update_document(
         db: Session,
@@ -180,20 +204,20 @@ class DocumentService:
         document = DocumentService.get_document(db, doc_id)
         if not document:
             return None
-        
+
         if title:
             document.title = title
-        
+
         if meta_data:
             # Merge with existing metadata
             current_meta = document.meta_data or {}
             current_meta.update(meta_data)
             document.meta_data = current_meta
-        
+
         db.commit()
         db.refresh(document)
         return document
-        
+
     @staticmethod
     def update_document_content(
         db: Session,
@@ -207,21 +231,21 @@ class DocumentService:
         document = DocumentService.get_document(db, doc_id)
         if not document:
             return None
-            
+
         # Update title and content
         document.title = title
         document.content = content
-        
+
         # Update timestamp
         document.updated_at = func.now()
-        
+
         # Delete existing chunks since content has changed
         DocumentService.delete_chunks(db, doc_id)
-        
+
         db.commit()
         db.refresh(document)
         return document
-    
+
     @staticmethod
     def delete_document(db: Session, doc_id: str) -> bool:
         """
@@ -230,24 +254,24 @@ class DocumentService:
         document = DocumentService.get_document(db, doc_id)
         if not document:
             return False
-        
+
         try:
             # Delete associated chunks first
             DocumentService.delete_chunks(db, doc_id)
-            
+
             # Delete file if it's a file-based document
             if document.type != DocumentType.MANUAL and document.content and os.path.exists(document.content):
                 os.remove(document.content)
-            
+
             # Delete document from database
             db.delete(document)
             db.commit()
         except Exception as e:
             db.rollback()
             raise e
-        
+
         return True
-    
+
     @staticmethod
     def add_chunk(
         db: Session,
@@ -261,10 +285,10 @@ class DocumentService:
         Add a chunk to a document.
         """
         chunk_id = str(uuid.uuid4())
-        
+
         # Convert embedding to JSON if provided
         embedding_json = json.dumps(embedding) if embedding else None
-        
+
         chunk = DocumentChunk(
             id=chunk_id,
             document_id=doc_id,
@@ -273,34 +297,54 @@ class DocumentService:
             meta_data=meta_data or {},
             embedding=embedding_json
         )
-        
+
         db.add(chunk)
         db.commit()
         db.refresh(chunk)
-        
+
         return chunk
-    
+
     @staticmethod
     def get_chunks(
-        db: Session, 
-        doc_id: str, 
-        skip: int = 0, 
+        db: Session,
+        doc_id: str,
+        skip: int = 0,
         limit: int = 100
     ) -> List[DocumentChunk]:
         """
-        Get all chunks for a document.
+        Get all chunks for a document (full details).
         """
         return db.query(DocumentChunk).filter(
             DocumentChunk.document_id == doc_id
         ).order_by(DocumentChunk.chunk_index).offset(skip).limit(limit).all()
-    
+
     @staticmethod
-    def get_chunk(db: Session, chunk_id: str) -> Optional[DocumentChunk]:
+    def get_chunk_ids(
+        db: Session,
+        doc_id: str
+    ) -> List[DocumentChunk]:
         """
-        Get a chunk by ID.
+        Get all chunk IDs and indices for a document.
         """
-        return db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
-    
+        # Check if document exists
+        document = DocumentService.get_document(db, doc_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        return db.query(DocumentChunk.id, DocumentChunk.chunk_index).filter(
+            DocumentChunk.document_id == doc_id
+        ).order_by(DocumentChunk.chunk_index).all()
+
+    @staticmethod
+    def get_chunk_detail(db: Session, chunk_id: str) -> Optional[DocumentChunk]:
+        """
+        Get a chunk by ID with full details (content, metadata).
+        """
+        chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
+        if not chunk:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+        return chunk
+
     @staticmethod
     def delete_chunks(db: Session, doc_id: str) -> int:
         """
@@ -309,7 +353,7 @@ class DocumentService:
         result = db.query(DocumentChunk).filter(DocumentChunk.document_id == doc_id).delete()
         db.commit()
         return result
-        
+
     @staticmethod
     def delete_all_chunks(db: Session) -> int:
         """
@@ -322,7 +366,7 @@ class DocumentService:
         except Exception as e:
             db.rollback()
             raise e
-    
+
     @classmethod
     async def import_github_repository(
         cls,
@@ -334,7 +378,7 @@ class DocumentService:
     ) -> Dict[str, Any]:
         """
         Import documents from a GitHub repository by cloning it to a temporary directory.
-        
+
         Args:
             db: Database session
             repo_url: GitHub repository URL (e.g., https://github.com/username/repo)
@@ -342,12 +386,12 @@ class DocumentService:
             file_extensions: List of file extensions to import (e.g., ["rst", "txt"])
             user_id: ID of the user importing the documents
             max_files: Maximum number of files to import
-            
+
         Returns:
             Dictionary with import results
         """
         from app.core.config import settings
-        
+
         # Parse GitHub repository URL
         # Expected format: https://github.com/username/repo
         try:
@@ -364,32 +408,32 @@ class DocumentService:
                     "success": False,
                     "message": "Git executable not found. Please make sure Git is installed and in the PATH."
                 }
-                
+
             # Remove trailing slash if present
             if repo_url.endswith('/'):
                 repo_url = repo_url[:-1]
-                
+
             parts = repo_url.split('/')
             if 'github.com' not in repo_url or len(parts) < 5:
                 return {
                     "success": False,
                     "message": "Invalid GitHub repository URL. Expected format: https://github.com/username/repo"
                 }
-            
+
             owner = parts[-2]
             repo_name = parts[-1]
-            
+
             logger.info(f"Attempting to import from GitHub repository: {owner}/{repo_name}, branch: {branch}")
-            
+
             # Create a temporary directory for the repository
             temp_dir = tempfile.mkdtemp()
             logger.info(f"Created temporary directory: {temp_dir}")
-            
+
             try:
                 # Clone the repository
                 logger.info(f"Cloning repository {repo_url} to {temp_dir}")
                 repo = git.Repo.clone_from(repo_url, temp_dir)
-                
+
                 # Checkout the specified branch if provided
                 if branch:
                     logger.info(f"Checking out branch: {branch}")
@@ -401,7 +445,7 @@ class DocumentService:
                             "success": False,
                             "message": f"Branch '{branch}' not found in repository. Please check the branch name and try again."
                         }
-                
+
                 # Find all files with the specified extensions
                 all_files = []
                 for ext in file_extensions:
@@ -409,32 +453,32 @@ class DocumentService:
                     pattern = os.path.join(temp_dir, f"**/*.{ext}")
                     files = glob.glob(pattern, recursive=True)
                     all_files.extend(files)
-                
+
                 logger.info(f"Found {len(all_files)} files with extensions: {', '.join(file_extensions)}")
-                
+
                 if not all_files:
                     return {
                         "success": False,
                         "message": f"No files with extensions {', '.join(file_extensions)} found in the repository"
                     }
-                
+
                 # Log the number of files found
                 logger.info(f"Processing {len(all_files)} files")
-                
+
                 # Import each file
                 imported_count = 0
                 document_ids = []
-                
+
                 for file_path in all_files:
                     try:
                         # Get relative path for display
                         rel_path = os.path.relpath(file_path, temp_dir)
                         logger.info(f"Processing file: {rel_path}")
-                        
+
                         # Get file extension
                         _, file_ext = os.path.splitext(file_path)
                         file_ext = file_ext[1:].lower()  # Remove the dot and convert to lowercase
-                        
+
                         # Determine document type
                         doc_type = None
                         if file_ext == 'pdf':
@@ -442,7 +486,7 @@ class DocumentService:
                             # For binary files, copy to uploads directory
                             upload_dir = Path(settings.UPLOAD_DIR)
                             upload_dir.mkdir(exist_ok=True)
-                            
+
                             dest_path = f"{settings.UPLOAD_DIR}/{uuid.uuid4()}.{file_ext}"
                             shutil.copy2(file_path, dest_path)
                             file_content = dest_path  # Store the file path
@@ -451,7 +495,7 @@ class DocumentService:
                             # For binary files, copy to uploads directory
                             upload_dir = Path(settings.UPLOAD_DIR)
                             upload_dir.mkdir(exist_ok=True)
-                            
+
                             dest_path = f"{settings.UPLOAD_DIR}/{uuid.uuid4()}.{file_ext}"
                             shutil.copy2(file_path, dest_path)
                             file_content = dest_path  # Store the file path
@@ -488,11 +532,11 @@ class DocumentService:
                             doc_type = DocumentType.TEXT
                             with open(file_path, 'r', encoding='utf-8') as f:
                                 file_content = f.read()
-                        
+
                         # Create document record
                         doc_id = str(uuid.uuid4())
                         filename = os.path.basename(file_path)
-                        
+
                         document = Document(
                             id=doc_id,
                             filename=filename,
@@ -507,25 +551,25 @@ class DocumentService:
                                 "path": rel_path
                             }
                         )
-                        
+
                         db.add(document)
                         db.commit()
                         db.refresh(document)
-                        
+
                         imported_count += 1
                         document_ids.append(doc_id)
                         logger.info(f"Imported document: {filename}")
                     except Exception as e:
                         logger.error(f"Error processing file {file_path}: {str(e)}")
                         continue
-                
+
                 return {
                     "success": True,
                     "message": f"Successfully imported {imported_count} documents from GitHub repository",
                     "imported_count": imported_count,
                     "document_ids": document_ids
                 }
-                
+
             except git.GitCommandError as e:
                 logger.error(f"Git error: {str(e)}")
                 if "not found" in str(e).lower():
@@ -545,7 +589,7 @@ class DocumentService:
                     shutil.rmtree(temp_dir)
                 except Exception as e:
                     logger.error(f"Error cleaning up temporary directory: {str(e)}")
-            
+
         except Exception as e:
             logger.error(f"Error importing GitHub repository: {str(e)}")
             return {

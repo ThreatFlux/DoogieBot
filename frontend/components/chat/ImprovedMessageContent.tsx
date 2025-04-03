@@ -92,13 +92,15 @@ interface MessageContentProps {
   message: Message;
   onUpdateMessage?: (messageId: string, newContent: string) => Promise<boolean>;
   onFeedback?: (messageId: string, feedbackType: FeedbackType, comment?: string) => Promise<void>; // Add onFeedback prop
+  isWaitingForResponse?: boolean; // Add prop for loading state
 }
 
 const ImprovedMessageContent: React.FC<MessageContentProps> = ({
   content,
   message,
   onUpdateMessage,
-  onFeedback // Destructure onFeedback
+  onFeedback, // Destructure onFeedback
+  isWaitingForResponse // Destructure new prop
 }) => {
   const [collapsedThinkTags, setCollapsedThinkTags] = useState<{[key: number]: boolean}>({});
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -143,32 +145,58 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
     };
   }, [showActionsOnMobile]);
 
-  // Copy content to clipboard
-  const copyToClipboard = async (text: string, index: number) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedIndex(index);
-      showNotification('Copied to clipboard!', 'success');
-      
-      // Reset copy state after 2 seconds
-      setTimeout(() => {
-        setCopiedIndex(null);
-      }, 2000);
-      
-      return true;
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
-      showNotification('Failed to copy to clipboard', 'error');
-      return false;
-    }
-  };
-
-  // Copy the entire message content
-  const copyMessageContent = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the message click
-    copyToClipboard(content, -1);
-  };
-
+  
+    // Copy content to clipboard with fallback for insecure contexts
+    const copyToClipboard = async (text: string, index: number) => {
+      let success = false;
+      try {
+        // Try modern clipboard API first (requires secure context)
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          success = true;
+        } else {
+          // Fallback for insecure contexts or older browsers
+          const textArea = document.createElement('textarea');
+          textArea.value = text;
+          textArea.style.position = 'fixed'; // Prevent scrolling to bottom
+          textArea.style.left = '-9999px';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          try {
+            success = document.execCommand('copy');
+          } catch (err) {
+            console.error('Fallback copy failed:', err);
+            success = false;
+          }
+          document.body.removeChild(textArea);
+        }
+  
+        if (success) {
+          setCopiedIndex(index);
+          showNotification('Copied to clipboard!', 'success');
+          // Reset copy state after 2 seconds
+          setTimeout(() => {
+            setCopiedIndex(null);
+          }, 2000);
+        } else {
+          throw new Error('Copy command was not successful.');
+        }
+        
+        return success;
+      } catch (error) {
+        console.error('Failed to copy to clipboard:', error);
+        showNotification('Failed to copy to clipboard', 'error');
+        return false;
+      }
+    }; // End of copyToClipboard
+  
+    // Copy the entire message content
+    const copyMessageContent = (e: React.MouseEvent) => { // Restore function definition and parameter
+      e.stopPropagation(); // Prevent triggering the message click
+      copyToClipboard(content, -1);
+    }; // End of copyMessageContent
+  
   // Format the creation date for tooltip display
   const formattedDate = message.created_at 
     ? new Date(message.created_at).toLocaleString()
@@ -319,8 +347,21 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
     );
   }
 
+  // Show loading indicator if waiting for the first chunk of an assistant message
+  if (isWaitingForResponse && message.role === 'assistant' && !content) {
+    return (
+      <div className="flex items-center text-gray-500 dark:text-gray-400 italic">
+        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Thinking...
+      </div>
+    );
+  }
+
   return (
-    <div 
+    <div
       ref={messageRef}
       className="relative group/message w-full" 
       onClick={(e) => {
@@ -399,8 +440,12 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
             <div className="flex space-x-1">
               {/* Thumbs Up Button */}
               <button
-                onClick={() => onFeedback && onFeedback(String(message.id), 'positive')} // Add onClick for positive feedback
-                className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-green-100 dark:hover:bg-green-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
+                onClick={() => { if (onFeedback) onFeedback(String(message.id), 'positive'); }} // Call onFeedback prop
+                className={`p-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-green-100 dark:hover:bg-green-900 ${
+                  message.feedback === 'positive'
+                    ? 'bg-green-500 text-white' // Highlighted state
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300' // Default state
+                }`}
                 aria-label="Thumbs up"
                 title="Thumbs up"
               >
@@ -411,7 +456,11 @@ const ImprovedMessageContent: React.FC<MessageContentProps> = ({
               {/* Thumbs Down Button */}
               <button
                 onClick={handleNegativeFeedbackClick} // Use the new handler
-                className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
+                className={`p-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-red-100 dark:hover:bg-red-900 ${
+                  message.feedback === 'negative'
+                    ? 'bg-red-500 text-white' // Highlighted state
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300' // Default state
+                }`}
                 aria-label="Thumbs down"
                 title="Thumbs down"
               >

@@ -1,4 +1,6 @@
-from sqlalchemy import Column, String, Boolean, DateTime, func, JSON
+from sqlalchemy import Column, String, Boolean, DateTime, Float, func
+from sqlalchemy.dialects.sqlite import JSON
+
 import uuid
 
 from app.db.base import Base
@@ -19,12 +21,18 @@ class LLMConfig(Base):
     system_prompt = Column(String, nullable=False)
     api_key = Column(String, nullable=True)
     base_url = Column(String, nullable=True)
-    is_active = Column(Boolean, default=False, index=True)
+    temperature = Column(Float, nullable=True, default=0.7)  # Added temperature field
+    is_active = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
     # Additional configuration stored as JSON
-    config = Column(JSON, nullable=True)
-    
+    # Can include:
+    # - rag_top_k: Number of RAG results to return
+    # - reranking_provider: Provider for reranking model
+    # - reranking_model: Model to use for reranking
+    # - use_reranking: Boolean flag to enable/disable reranking
+    # - temperature: (Now a top-level field)
+    config = Column(JSON, nullable=True)    
     def __repr__(self):
         return f"<LLMConfig id={self.id}, provider={self.provider}>"

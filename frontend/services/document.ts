@@ -1,4 +1,4 @@
-import { Document, PaginatedResponse, PaginationParams, ProcessingStatus } from '@/types';
+import { Document, PaginatedResponse, PaginationParams, ProcessingStatus, DocumentChunkId, DocumentChunkDetail } from '@/types'; // Added DocumentChunkId, DocumentChunkDetail
 import { del, get, getPaginated, post, put } from './api';
 
 // Get all documents with pagination
@@ -33,7 +33,7 @@ export const getDocument = async (documentId: string): Promise<{ document?: Docu
 export const uploadDocument = async (file: File, title?: string, process: boolean = false): Promise<{ document?: Document; error?: string }> => {
   const formData = new FormData();
   formData.append('file', file);
-  
+
   if (title) {
     formData.append('title', title);
   } else {
@@ -113,7 +113,8 @@ export const updateDocumentContent = async (documentId: string, title: string, c
 // Delete a document
 export const deleteDocument = async (documentId: string): Promise<{ success?: boolean; error?: string }> => {
   console.log('Deleting document:', documentId);
-  const response = await del<boolean>(`/documents/${documentId}`);
+  // Use the new response type from the backend { status: string, message: string }
+  const response = await del<{ status: string; message: string }>(`/documents/${documentId}`);
 
   console.log('Delete response:', response);
   if (response.error) {
@@ -121,8 +122,10 @@ export const deleteDocument = async (documentId: string): Promise<{ success?: bo
     return { error: response.error };
   }
 
-  return { success: response.data };
+  // Check the status field for success
+  return { success: response.data?.status === 'success' };
 };
+
 
 // Process a document
 export const processDocument = async (documentId: string, config?: any): Promise<{ status?: ProcessingStatus; error?: string }> => {
@@ -188,31 +191,31 @@ export const rebuildGraphRAG = async (): Promise<{ success?: boolean; error?: st
 // Delete all documents and reset RAG
 export const deleteAllDocumentsAndResetRAG = async (): Promise<{ success?: boolean; error?: string }> => {
   console.log('Deleting all documents and resetting RAG...');
-  
+
   // First delete all documents
   const deleteResponse = await del('/documents/all');
-  
+
   if (deleteResponse.error) {
     console.error('Error deleting all documents:', deleteResponse.error);
     return { error: deleteResponse.error };
   }
-  
+
   // Then delete all chunks
   const chunksResponse = await post('/rag/delete-all-chunks');
-  
+
   if (chunksResponse.error) {
     console.error('Error deleting all chunks:', chunksResponse.error);
     return { error: chunksResponse.error };
   }
-  
+
   // Reset the RAG system by deleting index files
   const resetResponse = await post('/rag/reset');
-  
+
   if (resetResponse.error) {
     console.error('Error resetting RAG system:', resetResponse.error);
     return { error: resetResponse.error };
   }
-  
+
   return { success: true };
 };
 
@@ -236,7 +239,7 @@ export const uploadZipFile = async (
   formData.append('file', file);
   formData.append('process', 'true'); // Always process documents from zip
   formData.append('generate_embeddings', generateEmbeddings ? 'true' : 'false');
-  
+
   console.log('Uploading zip file:', { filename: file.name, size: file.size, generateEmbeddings });
   const response = await post<any>('/documents/upload-zip', formData, {
     headers: {
@@ -265,13 +268,13 @@ export const importGitHubRepository = async (
   refresh: boolean = false
 ): Promise<{ success?: boolean; error?: string; message?: string; imported_count?: number }> => {
   console.log('Importing GitHub repository:', { repoUrl, branch, fileTypes, backgroundProcessing, refresh });
-  
+
   // If refresh is true, first delete any existing documents from this repository
   if (refresh) {
     try {
       // Get all documents
       const { documents } = await getDocuments();
-      
+
       if (documents && documents.items) {
         // Find documents from this repository
         const repoDocuments = documents.items.filter(doc =>
@@ -280,12 +283,12 @@ export const importGitHubRepository = async (
           doc.meta_data.repository &&
           doc.meta_data.repository.includes(repoUrl.split('/').slice(-2).join('/'))
         );
-        
+
         // Delete each document
         for (const doc of repoDocuments) {
           await deleteDocument(doc.id);
         }
-        
+
         console.log(`Deleted ${repoDocuments.length} existing documents from repository`);
       }
     } catch (err) {
@@ -293,7 +296,7 @@ export const importGitHubRepository = async (
       // Continue with import even if deletion fails
     }
   }
-  
+
   // Import the repository
   const response = await post<any>('/documents/github', {
     repo_url: repoUrl,
@@ -318,3 +321,35 @@ export const importGitHubRepository = async (
 
   return { success: true };
 };
+
+// --- New Chunk Functions ---
+
+// Get chunk IDs for a document
+export const getDocumentChunkIds = async (documentId: string): Promise<{ chunkIds?: DocumentChunkId[]; error?: string }> => {
+  console.log('Fetching chunk IDs for document:', documentId);
+  const response = await get<DocumentChunkId[]>(`/documents/${documentId}/chunks`);
+
+  console.log('Chunk IDs response:', response);
+  if (response.error) {
+    console.error('Error fetching chunk IDs:', response.error);
+    return { error: response.error };
+  }
+
+  return { chunkIds: response.data };
+};
+
+// Get details for a specific chunk
+export const getChunkDetail = async (chunkId: string): Promise<{ chunk?: DocumentChunkDetail; error?: string }> => {
+  console.log('Fetching details for chunk:', chunkId);
+  const response = await get<DocumentChunkDetail>(`/documents/chunks/${chunkId}`);
+
+  console.log('Chunk detail response:', response);
+  if (response.error) {
+    console.error('Error fetching chunk detail:', response.error);
+    return { error: response.error };
+  }
+
+  return { chunk: response.data };
+};
+
+// --- End New Chunk Functions ---

@@ -138,6 +138,18 @@ class ChatService:
 
         message.feedback = feedback
         message.feedback_text = feedback_text
+        
+        # If negative feedback on an assistant message, find the preceding user question
+        if message.role == MessageRole.ASSISTANT and feedback == FeedbackType.NEGATIVE:
+            preceding_user_message = db.query(Message)\
+                .filter(Message.chat_id == message.chat_id)\
+                .filter(Message.role == MessageRole.USER)\
+                .filter(Message.created_at < message.created_at)\
+                .order_by(Message.created_at.desc())\
+                .first()
+            if preceding_user_message:
+                message.related_question_id = preceding_user_message.id
+                
         db.commit()
         db.refresh(message)
         return message
@@ -168,8 +180,10 @@ class ChatService:
         Get paginated messages with feedback, optionally filtered by feedback type and review status.
         Returns a tuple of (messages, total_count).
         """
-        query = db.query(Message).filter(Message.feedback.isnot(None))
-
+        query = db.query(Message)\
+            .filter(Message.feedback.isnot(None))\
+            .options(joinedload(Message.related_question)) # Eager load the related question
+        
         if feedback_type:
             query = query.filter(Message.feedback == feedback_type)
 
@@ -180,8 +194,22 @@ class ChatService:
         total = query.count()
 
         # Apply pagination
-        messages = query.order_by(Message.created_at.desc()).offset(skip).limit(limit).all()
-
+        messages = query.order_by(Message.created_at.desc()).offset(skip).limit(limit).all()        
+        # Add logging to inspect the loaded relationship
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Fetched {len(messages)} feedback messages for review.")
+        for msg in messages:
+            # Only log details for messages where we expect a related question
+            if msg.feedback == FeedbackType.NEGATIVE and msg.role == MessageRole.ASSISTANT:
+                logger.info(f"Checking Message ID: {msg.id}, Related Question ID: {msg.related_question_id}")
+                # Check if the relationship attribute exists and if it was loaded (not None)
+                if hasattr(msg, 'related_question') and msg.related_question:
+                    logger.info(f"  Related Question (ID: {msg.related_question.id}) Content: {msg.related_question.content[:50]}...") # Log first 50 chars
+                elif msg.related_question_id:
+                    logger.warning(f"  Related Question ID {msg.related_question_id} exists, but relationship object 'related_question' is None or missing.")
+                else:
+                    logger.info("  No Related Question ID stored for this message.")
         return messages, total
 
     @staticmethod

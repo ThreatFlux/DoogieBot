@@ -6,7 +6,8 @@ import {
   RAGConfigSection,
   ModelSelectionSection,
   APIKeysSection,
-  ProviderConfig
+  ProviderConfig,
+  ChatConfig // Import ChatConfig type
 } from '../../components/admin/llm';
 import {
   getLLMProviders,
@@ -24,7 +25,7 @@ const LLMConfiguration: React.FC = () => {
   const [rerankingConfigs, setRerankingConfigs] = useState<any[]>([]);
   
   // State for active configs
-  const [activeChatConfig, setActiveChatConfig] = useState<any | null>(null);
+  const [activeChatConfig, setActiveChatConfig] = useState<ChatConfig | null>(null); // Use ChatConfig type
   const [activeEmbeddingConfig, setActiveEmbeddingConfig] = useState<any | null>(null);
   const [activeRerankingConfig, setActiveRerankingConfig] = useState<any | null>(null);
   
@@ -52,6 +53,9 @@ const LLMConfiguration: React.FC = () => {
   const [filteredRerankingModels, setFilteredRerankingModels] = useState<string[]>([]);
   const [isPollingRerankingModels, setIsPollingRerankingModels] = useState<boolean>(false);
   
+  // State for temperature
+  const [temperature, setTemperature] = useState<number>(0.7); // Added temperature state
+  
   // UI state
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +69,6 @@ const LLMConfiguration: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-
     // Load providers
     const providersResponse = await getLLMProviders();
     if (providersResponse.error) {
@@ -270,6 +273,8 @@ const LLMConfiguration: React.FC = () => {
               activeChatConfig={activeChatConfig}
               activeEmbeddingConfig={activeEmbeddingConfig}
               activeRerankingConfig={activeRerankingConfig}
+              temperature={temperature} // Pass temperature state
+              setTemperature={setTemperature} // Pass temperature setter
               
               // Callbacks
               onUpdate={loadData}

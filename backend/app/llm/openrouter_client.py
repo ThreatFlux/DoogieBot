@@ -156,7 +156,6 @@ class OpenRouterClient(LLMClient):
                         if line == "data: [DONE]": logger.debug("Received [DONE]")
                         continue
                     if line.startswith("data: "): line = line[6:]
-
                     try:
                         if not line.strip(): continue
                         data = json.loads(line)
@@ -218,7 +217,6 @@ class OpenRouterClient(LLMClient):
                         logger.error(f"Error processing OpenRouter stream chunk: {e}")
                         yield {"type": "error", "error": str(e), "done": True}
                         return
-
                 # --- Final Chunk Processing ---
                 logger.debug(f"OpenRouter stream processing complete after {chunk_count} delta chunks.")
 

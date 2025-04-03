@@ -27,12 +27,14 @@ class DocumentResponse(DocumentBase):
     created_at: datetime
     updated_at: datetime
     meta_data: Optional[Dict[str, Any]] = None
+    chunk_count: Optional[int] = None # Added chunk_count
 
     model_config = ConfigDict(from_attributes=True)
 
 class DocumentDetailResponse(DocumentResponse):
     content: Optional[str] = None
-    chunks: Optional[List["DocumentChunkResponse"]] = None
+    # Removed chunks list, will be fetched separately
+    # chunks: Optional[List["DocumentChunkResponse"]] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,7 +53,6 @@ class DocumentChunkResponse(DocumentChunkBase):
     document_id: str
     created_at: datetime
     embedding: Optional[List[float]] = None
-
     model_config = ConfigDict(from_attributes=True)
         
     @field_validator('embedding', mode='before')
@@ -64,6 +65,27 @@ class DocumentChunkResponse(DocumentChunkBase):
             except json.JSONDecodeError: # Be specific about the exception
                 return None
         return v
+
+# New schema for listing chunk IDs
+class DocumentChunkIdResponse(BaseModel):
+    id: str
+    chunk_index: int
+
+    class Config:
+        from_attributes = True
+
+# New schema for fetching a single chunk's content
+class DocumentChunkDetailResponse(BaseModel):
+    id: str
+    document_id: str
+    content: str
+    chunk_index: int
+    meta_data: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 # Processing schemas
 class ProcessingStatus(BaseModel):
@@ -92,6 +114,5 @@ class PaginatedResponse(BaseModel, Generic[T]):
     page: int
     size: int
     pages: int
-    
     # Update forward references
     DocumentDetailResponse.model_rebuild()

@@ -28,6 +28,7 @@ export interface ChatConfig {
   model: string;
   system_prompt: string;
   is_active: boolean;
+  temperature?: number; // Added temperature field
   config?: {
     rag_top_k?: number;
     use_reranking?: boolean;

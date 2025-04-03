@@ -59,14 +59,8 @@ RUN cd /app/backend && \
 FROM base AS frontend-builder
 
 # Set working directory
-WORKDIR /app
-
-# Copy frontend package files
-COPY frontend/package.json frontend/pnpm-lock.yaml* /app/frontend/
-
-# Install frontend dependencies
 WORKDIR /app/frontend
-RUN pnpm install
+
 
 # Copy frontend code (will respect .dockerignore for node_modules)
 WORKDIR /app
@@ -87,8 +81,7 @@ COPY frontend/utils /app/frontend/utils/
 
 
 # Build frontend for production
-WORKDIR /app/frontend
-RUN NODE_ENV=production pnpm run build
+RUN cd /app/frontend && NODE_ENV=production pnpm run build
 
 # Stage 3: Development stage
 FROM base AS development

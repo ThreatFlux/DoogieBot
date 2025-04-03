@@ -10,6 +10,7 @@ import { FeedbackType } from '@/components/chat/FeedbackButton'; // Assuming Fee
 
 export interface UseChatMessagesReturn {
   isStreaming: boolean;
+  isWaitingForResponse: boolean; // Expose new state
   error: string | null; // Error specific to messaging
   messagesEndRef: React.RefObject<HTMLDivElement>;
   handleSendMessage: (messageContent: string, contextDocuments?: string[]) => Promise<void>;
@@ -30,12 +31,13 @@ export const useChatMessages = (
   const { showNotification } = useNotification();
   const router = useRouter();
 
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-
-  // Function to close any existing EventSource
+  
+    const [isStreaming, setIsStreaming] = useState(false);
+    const [isWaitingForResponse, setIsWaitingForResponse] = useState(false); // New state for initial wait
+    const [error, setError] = useState<string | null>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const eventSourceRef = useRef<EventSource | null>(null);
+  
   const closeEventSource = useCallback(() => {
     if (eventSourceRef.current) {
       console.log('Closing existing EventSource connection');
@@ -170,6 +172,11 @@ export const useChatMessages = (
       // console.log('Received event data:', event.data.substring(0, 100) + '...'); // Log less verbosely
       const data = JSON.parse(event.data);
 
+      // Clear waiting state on first received chunk
+      if (isWaitingForResponse) {
+        setIsWaitingForResponse(false);
+      }
+
       if (data.error) {
         setError(data.content || 'An error occurred during streaming');
         closeEventSource();
@@ -214,7 +221,61 @@ export const useChatMessages = (
         setIsStreaming(false);
         // Refresh the chat list to ensure title/timestamp updates are reflected
         loadChats();
-        // No need to refresh current chat here, local state is up-to-date
+        // Refresh the current chat to get final message IDs and potentially other updates
+        if (currentChat?.id) {
+          const chatIdToRefresh = currentChat.id; // Capture ID before potential state changes
+          getChat(chatIdToRefresh).then(result => {
+            const fetchedChat = result.chat; // Assign to a constant first
+            if (fetchedChat) { // Check the constant
+              console.log('Refreshed current chat data from backend:', fetchedChat.id);
+              setCurrentChat((prevChat): Chat | null => { // Explicitly define return type
+                // If there's no previous chat, or the ID doesn't match the fetched chat,
+                // use the newly fetched chat directly. fetchedChat is guaranteed non-null here.
+                if (!prevChat || prevChat.id !== fetchedChat.id) { // Use the constant
+                  return fetchedChat; // Use the constant
+                }
+
+                // --- If we are here, prevChat exists and IDs match. Merge messages. ---
+
+                // Create a map of previous messages for efficient lookup
+                const prevMessagesMap = new Map(prevChat.messages?.map(msg => [msg.id, msg]));
+
+                // Ensure fetched messages is an array
+                const fetchedMessages = fetchedChat.messages || []; // Use the constant
+
+                // Map over fetched messages and merge with previous ones if necessary
+                const finalMessages = fetchedMessages.map(fetchedMsg => {
+                  const prevMsg = prevMessagesMap.get(fetchedMsg.id);
+
+                  // If a previous message exists and it's an assistant message, merge token data
+                  if (prevMsg && prevMsg.role === 'assistant') {
+                    return {
+                      ...fetchedMsg, // Start with the fetched message data
+                      // Keep token info from prev state ONLY if missing in fetched state
+                      tokens: fetchedMsg.tokens ?? prevMsg.tokens,
+                      tokens_per_second: fetchedMsg.tokens_per_second ?? prevMsg.tokens_per_second,
+                    };
+                  }
+
+                  // Otherwise (no previous message, or not an assistant message), use the fetched message as is
+                  return fetchedMsg;
+                });
+
+                // Construct the final state: Start with prevChat, overlay fetched data (like updated_at),
+                // and use the merged messages array. This ensures we return a valid Chat object.
+                const updatedChat: Chat = {
+                    ...prevChat,      // Base is the previous state
+                    ...fetchedChat,   // Use the constant to overlay fields (e.g., updated_at)
+                    messages: finalMessages, // Use the carefully merged messages
+                };
+                return updatedChat; // Return the correctly typed Chat object
+              });
+            } else {
+              console.error('Failed to refresh chat after streaming:', result.error);
+              showNotification(`Failed to refresh chat details: ${result.error}`, 'error');
+            }
+          });
+        }
         showNotification('Response completed successfully', 'success');
         announce({ message: 'Response completed successfully', politeness: 'polite' });
       }
@@ -329,6 +390,9 @@ export const useChatMessages = (
         }
       }
 
+      // Set waiting state before starting stream
+      setIsWaitingForResponse(true);
+
       // 6. Setup and start EventSource
       const eventSource = setupEventSource(chatId, messageContent, contextDocuments);
       eventSource.onmessage = handleEventMessage;
@@ -356,6 +420,7 @@ export const useChatMessages = (
 
   return {
     isStreaming,
+    isWaitingForResponse, // Add new state to return object
     error,
     messagesEndRef,
     handleSendMessage,

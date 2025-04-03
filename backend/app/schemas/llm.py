@@ -11,6 +11,7 @@ class LLMConfigBase(BaseModel):
     system_prompt: str = Field(..., description="Global system prompt used for all LLM providers")
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    temperature: Optional[float] = Field(0.7, description="LLM temperature setting (0.0-2.0). Default is 0.7")
     config: Optional[Dict[str, Any]] = None
 
 class LLMConfigCreate(LLMConfigBase):
@@ -27,6 +28,7 @@ class LLMConfigUpdate(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     is_active: Optional[bool] = None
+    temperature: Optional[float] = None
     config: Optional[Dict[str, Any]] = None
 
 class LLMConfigInDB(LLMConfigBase):

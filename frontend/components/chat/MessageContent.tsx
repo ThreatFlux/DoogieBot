@@ -9,10 +9,14 @@ import { parseThinkTags } from '@/utils/thinkTagParser';
 import Tooltip from '@/components/ui/CustomTooltip';
 import { useNotification } from '@/contexts/NotificationContext';
 import DocumentReferences from '@/components/chat/DocumentReferences';
+import { submitFeedback } from '@/services/chat'; // Import the feedback service
+
+import { FeedbackType } from '@/components/chat/FeedbackButton'; // Assuming FeedbackType is defined here
 
 interface MessageContentProps {
   content: string;
   message: Message;
+  // REMOVED handleFeedback prop
 }
 
 // Define the expected structure for code blocks to help with TypeScript typing
@@ -23,16 +27,19 @@ interface CodeProps {
   [key: string]: any;
 }
 
-const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => {
+const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => { // REMOVED handleFeedback from destructuring
   const [collapsedThinkTags, setCollapsedThinkTags] = useState<{[key: number]: boolean}>({});
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [showActionsOnMobile, setShowActionsOnMobile] = useState(false);
   const [isInfoExpanded, setIsInfoExpanded] = useState(false);
   const { showNotification } = useNotification();
   const messageRef = useRef<HTMLDivElement>(null);
+  // REMOVED local feedback state - will rely on message prop
   
   // Parse think tags using memoization to avoid unnecessary re-parsing
   const parts = useMemo(() => parseThinkTags(content), [content]);
+
+  // REMOVED local handleFeedback function
 
   // Toggle think tag collapse state
   const toggleThinkTag = (index: number) => {
@@ -237,18 +244,28 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, message }) => 
           {message.role === 'assistant' && (
             <div className="flex space-x-1">
               <button
-                className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-green-100 dark:hover:bg-green-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
+                className={`p-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-green-100 dark:hover:bg-green-900 ${
+                  message.feedback === 'up' // Use message.feedback prop
+                    ? 'bg-green-500 text-white' // Highlighted state (hover is still applied from base)
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300' // Default state (hover is applied from base)
+                }`}
                 aria-label="Thumbs up"
                 title="Thumbs up"
+                // REMOVED onClick handler as handleFeedback is not in scope here
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
                 </svg>
               </button>
-              <button 
-                className="p-1.5 rounded-full shadow-sm bg-white dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
+              <button
+                className={`p-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-red-100 dark:hover:bg-red-900 ${
+                  message.feedback === 'down' // Use message.feedback prop
+                    ? 'bg-red-500 text-white' // Highlighted state
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300' // Default state
+                }`}
                 aria-label="Thumbs down"
                 title="Thumbs down"
+                // REMOVED onClick handler as handleFeedback is not in scope here
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />

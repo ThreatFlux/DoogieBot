@@ -7,8 +7,10 @@ import { Input } from '../../components/ui/Input';
 import ManualDocumentForm from '@/components/document/ManualDocumentForm';
 import GitHubRepositoryForm from '@/components/document/GitHubRepositoryForm';
 import ZipDocumentForm from '@/components/document/ZipDocumentForm';
+import ChunkContentDialog from '@/components/document/ChunkContentDialog'; // Import the dialog component
 import withAdmin from '@/utils/withAdmin';
-import { Document, PaginationParams } from '@/types';
+// Import new types and services
+import { Document, PaginationParams, DocumentChunkId, DocumentChunkDetail } from '@/types';
 import {
   getDocuments,
   getDocument,
@@ -16,10 +18,14 @@ import {
   deleteDocument,
   processDocument,
   deleteAllDocumentsAndResetRAG,
-  batchProcessDocuments
+  batchProcessDocuments,
+  getDocumentChunkIds, // Added
+  getChunkDetail // Added
 } from '@/services/document';
+import { Scrollbar } from 'react-scrollbars-custom'; // Import the new scrollbar
 
 type DocumentTab = 'upload' | 'manual' | 'github' | 'zip';
+
 
 const DocumentManagement = () => {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -50,11 +56,21 @@ const DocumentManagement = () => {
   const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // State for chunk display
+  const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null);
+  const [documentChunks, setDocumentChunks] = useState<DocumentChunkId[] | null>(null);
+  const [isLoadingChunks, setIsLoadingChunks] = useState(false);
+  const [chunkError, setChunkError] = useState<string | null>(null);
+  const [showChunkContentDialog, setShowChunkContentDialog] = useState(false);
+  const [selectedChunkContent, setSelectedChunkContent] = useState<DocumentChunkDetail | null>(null);
+  const [isLoadingChunkContent, setIsLoadingChunkContent] = useState(false);
+
+
   // Load documents from the server
   useEffect(() => {
     loadDocuments();
   }, [pagination.page, pagination.size, filterType]);
-  
+
   // Filter documents client-side based on search term
   useEffect(() => {
     if (!searchTerm.trim()) {
@@ -63,7 +79,8 @@ const DocumentManagement = () => {
     } else {
       // Filter documents by title (case-insensitive)
       const term = searchTerm.toLowerCase();
-      const filtered = documents.filter(doc =>
+      // Ensure 'documents' is an array before filtering
+      const filtered = (documents || []).filter(doc =>
         doc.title.toLowerCase().includes(term) ||
         (doc.type && doc.type.toLowerCase().includes(term))
       );
@@ -74,28 +91,31 @@ const DocumentManagement = () => {
   const loadDocuments = async () => {
     setIsLoading(true);
     setError(null);
+    setExpandedDocumentId(null); // Collapse chunks on reload
+    setDocumentChunks(null);
     try {
       const params: PaginationParams = {
         page: pagination.page,
         size: pagination.size
       };
-      
+
       // We'll do client-side filtering for search
-      
+
       if (filterType && filterType !== 'all') {
         params.doc_type = filterType;
       }
-      
-      const { documents, error } = await getDocuments(params);
-      if (error) {
-        setError(error);
-      } else if (documents && documents.items) {
-        setDocuments(documents.items);
+
+      const { documents: paginatedDocs, error: fetchError } = await getDocuments(params); // Renamed to avoid conflict
+      if (fetchError) {
+        setError(fetchError);
+        setDocuments([]); // Clear documents on error
+      } else if (paginatedDocs && paginatedDocs.items) {
+        setDocuments(paginatedDocs.items);
         setPagination({
-          page: documents.page,
-          size: documents.size,
-          total: documents.total,
-          pages: documents.pages
+          page: paginatedDocs.page,
+          size: paginatedDocs.size,
+          total: paginatedDocs.total,
+          pages: paginatedDocs.pages
         });
       } else {
         setDocuments([]);
@@ -123,9 +143,9 @@ const DocumentManagement = () => {
       setIsResettingRAG(true);
       setError(null);
       try {
-        const { success, error } = await deleteAllDocumentsAndResetRAG();
-        if (error) {
-          setError(error);
+        const { success, error: resetError } = await deleteAllDocumentsAndResetRAG(); // Renamed to avoid conflict
+        if (resetError) {
+          setError(resetError);
         } else if (success) {
           alert('All documents have been deleted and the RAG system has been reset successfully.');
           await loadDocuments();
@@ -159,9 +179,9 @@ const DocumentManagement = () => {
             chunk_overlap: 200
           })
         });
-        
+
         const result = await response.json();
-        
+
         if (!response.ok) {
           setError(result.detail || 'Failed to process all documents');
         } else {
@@ -192,8 +212,8 @@ const DocumentManagement = () => {
 
   const handleSelectAll = () => {
     const visibleDocuments = filteredDocuments;
-    const allSelected = visibleDocuments.every(doc => selectedDocuments.includes(doc.id));
-    
+    const allSelected = visibleDocuments.length > 0 && visibleDocuments.every(doc => selectedDocuments.includes(doc.id));
+
     if (allSelected) {
       // If all visible documents are selected, deselect them
       setSelectedDocuments(prev =>
@@ -213,7 +233,7 @@ const DocumentManagement = () => {
       });
     }
   };
-  
+
   const handlePageSizeChange = (newSize: number) => {
     setPagination(prev => ({
       ...prev,
@@ -221,7 +241,7 @@ const DocumentManagement = () => {
       size: newSize
     }));
   };
-  
+
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
     setPagination(prev => ({
@@ -229,7 +249,7 @@ const DocumentManagement = () => {
       page: 1 // Reset to first page when changing search term
     }));
   };
-  
+
   const handleFilterTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFilterType(e.target.value);
     setPagination(prev => ({
@@ -248,9 +268,9 @@ const DocumentManagement = () => {
       setIsProcessingSelected(true);
       setError(null);
       try {
-        const { result, error } = await batchProcessDocuments(selectedDocuments);
-        if (error) {
-          setError(error);
+        const { result, error: batchError } = await batchProcessDocuments(selectedDocuments); // Renamed to avoid conflict
+        if (batchError) {
+          setError(batchError);
         } else if (result) {
           alert(`Processing started for ${selectedDocuments.length} document(s). This will continue in the background.`);
           // After a short delay, reload the documents to show updated status
@@ -304,9 +324,9 @@ const DocumentManagement = () => {
     setUploadError(null);
 
     try {
-      const { document, error } = await uploadDocument(file, uploadTitle || file.name);
-      if (error) {
-        setUploadError(error);
+      const { document, error: uploadErr } = await uploadDocument(file, uploadTitle || file.name); // Renamed to avoid conflict
+      if (uploadErr) {
+        setUploadError(uploadErr);
       } else {
         setShowDocumentDialog(false);
         setUploadTitle('');
@@ -329,9 +349,9 @@ const DocumentManagement = () => {
     }
 
     try {
-      const { success, error } = await deleteDocument(documentId);
-      if (error) {
-        setError(error);
+      const { success, error: deleteErr } = await deleteDocument(documentId); // Renamed to avoid conflict
+      if (deleteErr) {
+        setError(deleteErr);
       } else if (success) {
         await loadDocuments();
       }
@@ -344,9 +364,9 @@ const DocumentManagement = () => {
   const handleProcessDocument = async (documentId: string) => {
     setProcessingDocumentId(documentId);
     try {
-      const { status, error } = await processDocument(documentId);
-      if (error) {
-        setError(error);
+      const { status, error: processErr } = await processDocument(documentId); // Renamed to avoid conflict
+      if (processErr) {
+        setError(processErr);
       } else if (status) {
         alert(`Document processed successfully: ${status.message}`);
         await loadDocuments();
@@ -368,12 +388,12 @@ const DocumentManagement = () => {
 
   const handleEditDocument = async (documentId: string) => {
     try {
-      const { document, error } = await getDocument(documentId);
-      if (error) {
-        setError(error);
+      const { document, error: getDocErr } = await getDocument(documentId); // Renamed to avoid conflict
+      if (getDocErr) {
+        setError(getDocErr);
         return;
       }
-      
+
       if (document) {
         // Only allow editing manual documents
         if (document.type === 'manual') {
@@ -392,6 +412,55 @@ const DocumentManagement = () => {
       console.error('Failed to load document for editing:', err);
     }
   };
+
+  // --- Chunk Handling Functions ---
+  const handleToggleChunks = async (documentId: string) => {
+    setChunkError(null); // Clear previous chunk errors
+    if (expandedDocumentId === documentId) {
+      setExpandedDocumentId(null);
+      setDocumentChunks(null);
+    } else {
+      setExpandedDocumentId(documentId); // Expand immediately
+      setDocumentChunks(null); // Clear previous chunks
+      setIsLoadingChunks(true);
+      try {
+        const { chunkIds, error: chunkErr } = await getDocumentChunkIds(documentId); // Renamed to avoid conflict
+        if (chunkErr) {
+          setChunkError(`Failed to load chunks: ${chunkErr}`);
+          setDocumentChunks([]); // Set empty array on error
+        } else {
+          setDocumentChunks(chunkIds || []);
+        }
+      } catch (err) {
+        setChunkError('An unexpected error occurred while loading chunks.');
+        console.error('Failed to load chunks:', err);
+        setDocumentChunks([]); // Set empty array on error
+      } finally {
+        setIsLoadingChunks(false);
+      }
+    }
+  };
+
+  const handleViewChunkContent = async (chunkId: string) => {
+    setSelectedChunkContent(null); // Clear previous content
+    setIsLoadingChunkContent(true);
+    setShowChunkContentDialog(true);
+    try {
+      const { chunk, error: chunkDetailErr } = await getChunkDetail(chunkId); // Renamed to avoid conflict
+      if (chunkDetailErr) {
+        setError(`Failed to load chunk content: ${chunkDetailErr}`); // Use main error state for dialog
+      } else {
+        setSelectedChunkContent(chunk || null);
+      }
+    } catch (err) {
+      setError('An unexpected error occurred while loading chunk content.');
+      console.error('Failed to load chunk content:', err);
+    } finally {
+      setIsLoadingChunkContent(false);
+    }
+  };
+  // --- End Chunk Handling Functions ---
+
 
   const getFileTypeIcon = (fileType: string) => {
     switch (fileType.toLowerCase()) {
@@ -459,13 +528,13 @@ const DocumentManagement = () => {
             </Button>
           </div>
         </div>
-        
+
         {error && (
           <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg dark:bg-red-200 dark:text-red-800">
             {error}
           </div>
         )}
-        
+
         {/* Filter and pagination controls */}
         <div className="flex flex-col md:flex-row gap-4 mb-4">
           <div className="flex-1 flex flex-col sm:flex-row gap-2">
@@ -523,7 +592,7 @@ const DocumentManagement = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Batch action buttons */}
         {documents && documents.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
@@ -531,11 +600,11 @@ const DocumentManagement = () => {
               variant="outline"
               onClick={handleSelectAll}
               className="text-sm"
-              disabled={isLoading}
+              disabled={isLoading || filteredDocuments.length === 0} // Disable if no visible docs
             >
               {filteredDocuments.length > 0 && filteredDocuments.every(doc => selectedDocuments.includes(doc.id))
-                ? 'Deselect All'
-                : 'Select All'}
+                ? 'Deselect All Visible'
+                : 'Select All Visible'}
             </Button>
             <Button
               variant="outline"
@@ -562,7 +631,7 @@ const DocumentManagement = () => {
             </div>
           </div>
         )}
-        
+
         {isLoading ? (
           <div className="text-center py-8">Loading...</div>
         ) : documents && documents.length > 0 ? (
@@ -571,78 +640,127 @@ const DocumentManagement = () => {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-800 text-left">
-                    <th className="p-3 border-b border-gray-200 dark:border-gray-700">
+                    <th className="p-3 border-b border-gray-200 dark:border-gray-700 w-10"> {/* Select column */}
                       <span className="sr-only">Select</span>
                     </th>
                     <th className="p-3 border-b border-gray-200 dark:border-gray-700">Document</th>
                     <th className="p-3 border-b border-gray-200 dark:border-gray-700">Type</th>
+                    <th className="p-3 border-b border-gray-200 dark:border-gray-700">Chunks</th> {/* New Chunks column */}
                     <th className="p-3 border-b border-gray-200 dark:border-gray-700">Uploaded</th>
                     <th className="p-3 border-b border-gray-200 dark:border-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredDocuments.map((doc) => (
-                    <tr key={doc.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-                      <td className="p-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedDocuments.includes(doc.id)}
-                          onChange={() => handleToggleSelectDocument(doc.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center">
-                          <span className="text-xl mr-2">{getFileTypeIcon(doc.type)}</span>
-                          <span className="font-medium text-gray-900 dark:text-white" title={doc.title}>
-                            {doc.title}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-3 text-gray-500 dark:text-gray-400">{doc.type}</td>
-                      <td className="p-3 text-gray-500 dark:text-gray-400">
-                        {new Date(doc.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleProcessDocument(doc.id)}
-                            isLoading={processingDocumentId === doc.id}
-                            disabled={processingDocumentId !== null}
-                            className="text-xs"
-                          >
-                            {processingDocumentId === doc.id ? 'Processing...' : 'Process'}
-                          </Button>
-                          
-                          {doc.type === 'manual' && (
+                    <> {/* Use Fragment to wrap row and chunk row */}
+                      <tr key={doc.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedDocuments.includes(doc.id)}
+                            onChange={() => handleToggleSelectDocument(doc.id)}
+                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center">
+                            <span className="text-xl mr-2">{getFileTypeIcon(doc.type)}</span>
+                            <span className="font-medium text-gray-900 dark:text-white" title={doc.title}>
+                              {doc.title}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-gray-500 dark:text-gray-400">{doc.type}</td>
+                        {/* Chunk Count Cell */}
+                        <td className="p-3 text-gray-500 dark:text-gray-400">
+                          {doc.chunk_count !== undefined && doc.chunk_count > 0 ? (
+                            <button
+                              onClick={() => handleToggleChunks(doc.id)}
+                              className="text-blue-600 dark:text-blue-400 hover:underline disabled:text-gray-400 disabled:no-underline"
+                              disabled={isLoadingChunks && expandedDocumentId === doc.id}
+                              title={expandedDocumentId === doc.id ? "Hide Chunks" : "Show Chunks"}
+                            >
+                              {isLoadingChunks && expandedDocumentId === doc.id ? '...' : doc.chunk_count}
+                              <span className="ml-1">{expandedDocumentId === doc.id ? '▲' : '▼'}</span>
+                            </button>
+                          ) : (
+                            <span>{doc.chunk_count ?? '-'}</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-gray-500 dark:text-gray-400">
+                          {new Date(doc.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex space-x-2">
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleEditDocument(doc.id)}
-                              className="text-blue-500 hover:text-blue-700 text-xs"
+                              onClick={() => handleProcessDocument(doc.id)}
+                              isLoading={processingDocumentId === doc.id}
+                              disabled={processingDocumentId !== null}
+                              className="text-xs"
                             >
-                              Edit
+                              {processingDocumentId === doc.id ? 'Processing...' : 'Process'}
                             </Button>
-                          )}
-                          
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(doc.id)}
-                            className="text-red-500 hover:text-red-700 text-xs"
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
+
+                            {doc.type === 'manual' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditDocument(doc.id)}
+                                className="text-blue-500 hover:text-blue-700 text-xs"
+                              >
+                                Edit
+                              </Button>
+                            )}
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(doc.id)}
+                              className="text-red-500 hover:text-red-700 text-xs"
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {/* Conditional Row for Chunks */}
+                      {expandedDocumentId === doc.id && (
+                        <tr className="bg-gray-50 dark:bg-gray-900">
+                          <td colSpan={6} className="p-4 border-b border-gray-200 dark:border-gray-700">
+                            {isLoadingChunks ? (
+                              <div className="text-sm text-gray-500">Loading chunks...</div>
+                            ) : chunkError ? (
+                               <div className="text-sm text-red-500">{chunkError}</div>
+                            ) : documentChunks && documentChunks.length > 0 ? (
+                              <div>
+                                <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">Chunks ({documentChunks.length}):</h4>
+                                <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 bg-gray-100 dark:bg-gray-800 rounded">
+                                  {documentChunks.map(chunk => (
+                                    <button
+                                      key={chunk.id}
+                                      onClick={() => handleViewChunkContent(chunk.id)}
+                                      className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      title={`View Chunk ${chunk.chunk_index} (ID: ${chunk.id.substring(0, 8)}...)`}
+                                    >
+                                      Chunk {chunk.chunk_index}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-500">No chunks found for this document.</div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ))}
                 </tbody>
               </table>
             </div>
-            
+
             {/* Pagination Controls */}
             {pagination.pages > 1 && (
               <div className="flex justify-center mt-6">
@@ -655,42 +773,42 @@ const DocumentManagement = () => {
                   >
                     Previous
                   </Button>
-                  
+
                   <div className="flex items-center space-x-1 overflow-x-auto max-w-md">
                     {(() => {
                       // Logic to show limited page numbers with ellipses
                       const visiblePageNumbers = [];
                       const totalPages = pagination.pages;
                       const currentPage = pagination.page;
-                      
+
                       // Always show first page
                       visiblePageNumbers.push(1);
-                      
+
                       // Calculate range of pages to show around current page
                       const delta = 2; // Number of pages to show on each side of current page
                       const leftBound = Math.max(2, currentPage - delta);
                       const rightBound = Math.min(totalPages - 1, currentPage + delta);
-                      
+
                       // Add ellipsis after first page if needed
                       if (leftBound > 2) {
                         visiblePageNumbers.push('ellipsis-left');
                       }
-                      
+
                       // Add pages around current page
                       for (let i = leftBound; i <= rightBound; i++) {
                         visiblePageNumbers.push(i);
                       }
-                      
+
                       // Add ellipsis before last page if needed
                       if (rightBound < totalPages - 1) {
                         visiblePageNumbers.push('ellipsis-right');
                       }
-                      
+
                       // Always show last page if there is more than one page
                       if (totalPages > 1) {
                         visiblePageNumbers.push(totalPages);
                       }
-                      
+
                       // Render the page buttons
                       return visiblePageNumbers.map((page, index) => {
                         if (page === 'ellipsis-left' || page === 'ellipsis-right') {
@@ -700,7 +818,7 @@ const DocumentManagement = () => {
                             </span>
                           );
                         }
-                        
+
                         return (
                           <Button
                             key={`page-${page}`}
@@ -716,7 +834,7 @@ const DocumentManagement = () => {
                       });
                     })()}
                   </div>
-                  
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -728,7 +846,7 @@ const DocumentManagement = () => {
                 </nav>
               </div>
             )}
-            
+
             <div className="text-center text-sm text-gray-500 mt-2">
               {searchTerm ?
                 `Showing ${filteredDocuments.length} of ${documents.length} documents (filtered from ${pagination.total} total)` :
@@ -743,7 +861,7 @@ const DocumentManagement = () => {
           </div>
         )}
       </div>
-      
+
       {/* Add Document Dialog */}
       <Dialog
         isOpen={showDocumentDialog}
@@ -757,13 +875,13 @@ const DocumentManagement = () => {
             {renderTabButton('manual', 'Manual Entry')}
             {renderTabButton('github', 'GitHub')}
           </div>
-          
+
           {activeTab === 'upload' ? (
             <div className="space-y-4 pt-2">
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Upload a document to be processed for the RAG system. Supported formats: PDF, DOCX, Markdown, TXT, JSON, JSONL, YAML, YML.
               </p>
-              
+
               <div className="space-y-4">
                 <div>
                   <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -778,7 +896,7 @@ const DocumentManagement = () => {
                   />
                   <p className="text-xs text-gray-500 mt-1">If not provided, the filename will be used</p>
                 </div>
-                
+
                 <div>
                   <label htmlFor="file" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Document File
@@ -792,13 +910,13 @@ const DocumentManagement = () => {
                   />
                 </div>
               </div>
-              
+
               {uploadError && (
                 <div className="p-3 text-sm text-red-700 bg-red-100 rounded-lg dark:bg-red-200 dark:text-red-800">
                   {uploadError}
                 </div>
               )}
-              
+
               <div className="flex justify-end space-x-2 mt-4">
                 <Button
                   variant="outline"
@@ -823,8 +941,8 @@ const DocumentManagement = () => {
                   setShowDocumentDialog(false);
                   loadDocuments();
                 }}
-                onError={(error) => {
-                  setError(typeof error === 'string' ? error : 'Failed to upload ZIP file');
+                onError={(zipError) => { // Renamed to avoid conflict
+                  setError(typeof zipError === 'string' ? zipError : 'Failed to upload ZIP file');
                 }}
               />
             </div>
@@ -866,6 +984,18 @@ const DocumentManagement = () => {
           />
         </div>
       </Dialog>
+
+      {/* Chunk Content Dialog */}
+      <ChunkContentDialog
+        isOpen={showChunkContentDialog}
+        onClose={() => {
+          setShowChunkContentDialog(false);
+          setSelectedChunkContent(null);
+        }}
+        chunk={selectedChunkContent}
+        isLoading={isLoadingChunkContent}
+      />
+
     </AdminLayout>
   );
 };

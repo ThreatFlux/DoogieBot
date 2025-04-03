@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field, field_validator, ConfigDict # Import ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict, computed_field # Import ConfigDict
 from datetime import datetime
 import json # For validating tool_calls
 
@@ -68,6 +68,7 @@ class MessageResponse(MessageBase):
 
     # RAG metadata
     context_documents: Optional[List[str]] = None
+    related_question_content: Optional[str] = None # Reinstate simple field
 
     @field_validator('context_documents', mode='before')
     @classmethod
