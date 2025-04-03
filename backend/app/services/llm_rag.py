@@ -29,11 +29,14 @@ async def _rerank_documents(reranking_client: LLMClient, query: str, documents: 
     try:
         # If the reranking client has a specific rerank method, use it
         if hasattr(reranking_client, 'rerank'):
+            logger.info(f"Using dedicated rerank method for query: {query[:50]}...")
             scores = await reranking_client.rerank(query, documents)
+            logger.debug(f"Raw rerank scores: {scores}")
             return scores
 
         # Check if the client has embedding capabilities
         if hasattr(reranking_client, 'get_embeddings'):
+            logger.info(f"Attempting reranking via embedding similarity for query: {query[:50]}...")
             # Use embeddings to calculate similarity
             try:
                 query_embedding = await reranking_client.get_embeddings([query])
@@ -156,13 +159,34 @@ async def get_rag_context(
                             logger.warning("Failed to create reranking client using _create_single_client")
                         else:
                             documents = [doc["content"] for doc in context]
+                            logger.info(f"--- Documents before reranking for query '{query[:50]}...' ---")
+                            for i, doc in enumerate(context):
+                                logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Initial Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
+                            logger.info("---------------------------------------------------------")
+
                             reranked_scores = await _rerank_documents(reranking_client, query, documents)
 
                             if reranked_scores and len(reranked_scores) == len(context):
                                 for i, score in enumerate(reranked_scores):
                                     context[i]["score"] = score
                                 context.sort(key=lambda x: x["score"], reverse=True)
-                                logger.info(f"Successfully reranked {len(context)} documents")
+                                logger.info(f"Successfully reranked {len(context)} documents.")
+                                logger.info(f"--- Documents after reranking for query '{query[:50]}...' ---")
+                                for i, doc in enumerate(context):
+                                    logger.info(f"  {i+1}. ID: {doc.get('id')}, Source: {doc.get('source')}, Reranked Score: {doc.get('score'):.4f}, Content: {doc.get('content', '')[:100]}...")
+                                logger.info("--------------------------------------------------------")
+
+                                # Apply reranked_top_n limit if set
+                                reranked_top_n = getattr(active_llm_config, 'reranked_top_n', None)
+                                if reranked_top_n is not None and reranked_top_n > 0:
+                                    if len(context) > reranked_top_n:
+                                        logger.info(f"Applying reranked_top_n limit: {reranked_top_n} (truncated from {len(context)})")
+                                        context = context[:reranked_top_n]
+                                    else:
+                                        logger.info(f"Reranked_top_n limit ({reranked_top_n}) is >= number of documents ({len(context)}), keeping all.")
+                                else:
+                                    logger.info("No reranked_top_n limit set or invalid value, keeping all reranked documents.")
+
                             else:
                                 logger.warning(f"Reranking returned {len(reranked_scores) if reranked_scores else 0} scores for {len(context)} documents. Using original ranking.")
                     except Exception as e:

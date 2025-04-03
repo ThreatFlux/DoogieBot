@@ -181,6 +181,7 @@ export const createLLMConfig = async (config: {
   api_key?: string;
   base_url?: string;
   temperature?: number; // Added temperature
+  reranked_top_n?: number | null;
   config?: any;
 }): Promise<{ config?: LLMConfig; error?: string }> => {
   const response = await post<LLMConfig>('/llm/admin/config', config);
@@ -202,6 +203,7 @@ export const updateLLMConfig = async (
     base_url?: string;
     is_active?: boolean;
     temperature?: number; // Added temperature
+    reranked_top_n?: number | null;
     config?: any;
   }
 ): Promise<{ config?: LLMConfig; error?: string }> => {
