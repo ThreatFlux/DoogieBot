@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any, Union, Generic, TypeVar
 
 T = TypeVar('T')
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict, field_validator
 from datetime import datetime
 
 # Document schemas
@@ -29,16 +29,14 @@ class DocumentResponse(DocumentBase):
     meta_data: Optional[Dict[str, Any]] = None
     chunk_count: Optional[int] = None # Added chunk_count
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class DocumentDetailResponse(DocumentResponse):
     content: Optional[str] = None
     # Removed chunks list, will be fetched separately
     # chunks: Optional[List["DocumentChunkResponse"]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Document Chunk schemas
 class DocumentChunkBase(BaseModel):
@@ -55,17 +53,16 @@ class DocumentChunkResponse(DocumentChunkBase):
     document_id: str
     created_at: datetime
     embedding: Optional[List[float]] = None
-
-    class Config:
-        from_attributes = True
-
-    @validator('embedding', pre=True)
+    model_config = ConfigDict(from_attributes=True)
+        
+    @field_validator('embedding', mode='before')
+    @classmethod
     def parse_embedding(cls, v):
         if isinstance(v, str):
             try:
                 import json
                 return json.loads(v)
-            except:
+            except json.JSONDecodeError: # Be specific about the exception
                 return None
         return v
 
@@ -117,6 +114,5 @@ class PaginatedResponse(BaseModel, Generic[T]):
     page: int
     size: int
     pages: int
-
-# Update forward references
-# DocumentDetailResponse.update_forward_refs() # No longer needed as chunks are removed
+    # Update forward references
+    DocumentDetailResponse.model_rebuild()
