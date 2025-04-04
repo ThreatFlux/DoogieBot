@@ -52,7 +52,6 @@ out/
 *.db
 *.sqlite3
 backend/indexes/*
-backend/alembic/versions/*
 
 # Logs
 logs/

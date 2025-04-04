@@ -41,15 +41,7 @@ run_migrations() {
     export UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/uv-cache-new}
     echo "Using UV cache directory: $UV_CACHE_DIR for migrations"
     
-    # 1. Autogenerate migration based on current models vs current DB state
-    echo "Autogenerating migration script..."
-    if UV_CACHE_DIR=$UV_CACHE_DIR uv run alembic revision --autogenerate -m "Auto-generated migration on startup"; then
-        echo "Migration script generated successfully (or no changes detected)."
-    else
-        echo "WARNING: Failed to autogenerate migration script. Proceeding with upgrade anyway."
-    fi
-    
-    # 2. Apply all migrations (including the one potentially just generated)
+    # Apply all migrations based on files in alembic/versions
     echo "Applying database migrations..."
     local max_attempts=5
     local attempt=1
@@ -125,16 +117,12 @@ prepare_frontend() {
         # mkdir -p node_modules .next # Directory creation moved to Dockerfile
     fi
     
-    # Install frontend dependencies if needed
-    # Check for a common binary instead of the whole .bin directory
-    if [ ! -f "node_modules/.bin/next" ]; then 
-        echo "Installing frontend dependencies..."
-        # Use --shamefully-hoist for better compatibility in Docker
-        # Use --no-strict-peer-dependencies to avoid peer dependency issues
-        pnpm install --shamefully-hoist --no-strict-peer-dependencies
-    else
-        echo "Frontend dependencies already installed."
-    fi
+    # Always run pnpm install on startup in dev to catch any missing deps
+    echo "Ensuring frontend dependencies are installed..."
+    # Use --shamefully-hoist for better compatibility in Docker
+    # Use --no-strict-peer-dependencies to avoid peer dependency issues
+    pnpm install --shamefully-hoist --no-strict-peer-dependencies
+    echo "Frontend dependencies check complete."
 }
 
 
