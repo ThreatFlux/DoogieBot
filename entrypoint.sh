@@ -7,21 +7,22 @@ ensure_directories() {
     mkdir -p /app/backend/db
     mkdir -p /app/backend/indexes
     mkdir -p /app/backend/uploads
-    mkdir -p /app/.uv-cache
     
-    # Set proper permissions
+    # Set proper permissions for app directories
     chmod -R 755 /app/backend/db
     chmod -R 755 /app/backend/indexes
     chmod -R 755 /app/backend/uploads
-    chmod -R 777 /app/.uv-cache # Make UV cache writable for everyone
     
-    # Remove .git directory from UV cache if it exists (causing permission errors)
-    if [ -d "/app/.uv-cache/sdists-v9/.git" ]; then
-        echo "Removing problematic .git directory from UV cache..."
-        rm -rf /app/.uv-cache/sdists-v9/.git
-    fi
+    # Create a new UV cache directory with proper permissions from the start
+    # Rather than trying to modify existing cache directory permissions
+    mkdir -p /tmp/uv-cache-new
+    chmod 777 /tmp/uv-cache-new
+    
+    # Set UV to use our new cache directory
+    export UV_CACHE_DIR=/tmp/uv-cache-new
     
     echo "Directories checked and created if needed."
+    echo "UV cache directory set to: $UV_CACHE_DIR"
 }
 
 # Run database migrations with retry logic
@@ -34,6 +35,10 @@ run_migrations() {
     touch "$PWD/db/doogie.db"
     chmod 666 "$PWD/db/doogie.db"
     
+    # Ensure UV environment variable is exported here too
+    export UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/uv-cache-new}
+    echo "Using UV cache directory: $UV_CACHE_DIR for migrations"
+    
     # Try to run migrations with retries
     local max_attempts=5
     local attempt=1
@@ -41,11 +46,14 @@ run_migrations() {
     
     while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
         echo "Attempt $attempt of $max_attempts to run migrations..."
-        if uv run alembic upgrade head; then
+        if UV_CACHE_DIR=$UV_CACHE_DIR uv run alembic upgrade head; then
             success=true
             echo "Database migrations completed successfully."
         else
             echo "Migration attempt $attempt failed. Waiting before retry..."
+            # Print UV cache directory info for debugging
+            echo "UV cache directory contents:"
+            ls -la $UV_CACHE_DIR || echo "Cannot list UV cache directory"
             sleep 5
             attempt=$((attempt+1))
         fi
@@ -93,13 +101,18 @@ EOF
 start_backend() {
     echo "Starting backend server..."
     cd /app/backend
+    
+    # Ensure UV environment variable is set here too
+    export UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/uv-cache-new}
+    echo "Using UV cache directory: $UV_CACHE_DIR for backend"
+    
     # Use a single worker with memory limits to prevent crashes
     # Set PYTHONMALLOC=debug to help catch memory issues
     export PYTHONMALLOC=debug
     # Set memory limits
     export PYTHONWARNINGS=always
     # Use a single worker with memory limits, run uvicorn directly in foreground
-    uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload --workers 1 --timeout-keep-alive 300 --timeout-graceful-shutdown 300 --log-level debug --limit-concurrency 20 --backlog 50
+    UV_CACHE_DIR=$UV_CACHE_DIR uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload --workers 1 --timeout-keep-alive 300 --timeout-graceful-shutdown 300 --log-level debug --limit-concurrency 20 --backlog 50
     # No backgrounding (&) or PID needed when running in foreground
     echo "Backend server started in foreground."
 }
