@@ -65,6 +65,18 @@ class DocumentChunkResponse(DocumentChunkBase):
                 return None
         return v
 
+# Added missing chunk ID response schema
+class DocumentChunkIdResponse(BaseModel):
+    id: str
+    chunk_index: int
+    
+    model_config = ConfigDict(from_attributes=True)
+
+# Added missing chunk detail response schema
+class DocumentChunkDetailResponse(DocumentChunkResponse):
+    # Extends DocumentChunkResponse with any additional fields needed
+    pass
+
 # Processing schemas
 class ProcessingStatus(BaseModel):
     status: str
