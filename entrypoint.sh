@@ -4,17 +4,17 @@ set -e
 # Ensure required directories exist
 ensure_directories() {
     echo "Ensuring required directories exist..."
-    mkdir -p /app/backend/db
-    mkdir -p /app/backend/indexes
-    mkdir -p /app/backend/uploads
+    # Use the persistent data directory for db and indexes
+    mkdir -p /app/data/db
+    mkdir -p /app/data/indexes
+    mkdir -p /app/backend/uploads # Uploads can stay within backend for now
     
-    # Set proper permissions for app directories
-    chmod -R 755 /app/backend/db
-    chmod -R 755 /app/backend/indexes
+    # Set proper permissions for data directories
+    chmod -R 777 /app/data/db
+    chmod -R 777 /app/data/indexes
     chmod -R 755 /app/backend/uploads
     
     # Create a new UV cache directory with proper permissions from the start
-    # Rather than trying to modify existing cache directory permissions
     mkdir -p /tmp/uv-cache-new
     chmod 777 /tmp/uv-cache-new
     
@@ -28,27 +28,39 @@ ensure_directories() {
 # Run database migrations with retry logic
 run_migrations() {
     echo "Running database migrations..."
-    cd /app/backend
+    cd /app/backend # Ensure we are in the correct directory for alembic.ini
     
-    # Create database directory if it doesn't exist
-    mkdir -p "$PWD/db"
-    touch "$PWD/db/doogie.db"
-    chmod 666 "$PWD/db/doogie.db"
+    # Ensure the database file exists in the persistent location
+    DB_FILE="/app/data/db/doogie.db"
+    mkdir -p "$(dirname "$DB_FILE")"
+    touch "$DB_FILE"
+    chmod 666 "$DB_FILE"
+    echo "Ensured database file exists at $DB_FILE"
     
     # Ensure UV environment variable is exported here too
     export UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/uv-cache-new}
     echo "Using UV cache directory: $UV_CACHE_DIR for migrations"
     
-    # Try to run migrations with retries
+    # 1. Autogenerate migration based on current models vs current DB state
+    echo "Autogenerating migration script..."
+    if UV_CACHE_DIR=$UV_CACHE_DIR uv run alembic revision --autogenerate -m "Auto-generated migration on startup"; then
+        echo "Migration script generated successfully (or no changes detected)."
+    else
+        echo "WARNING: Failed to autogenerate migration script. Proceeding with upgrade anyway."
+    fi
+    
+    # 2. Apply all migrations (including the one potentially just generated)
+    echo "Applying database migrations..."
     local max_attempts=5
     local attempt=1
     local success=false
     
     while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
-        echo "Attempt $attempt of $max_attempts to run migrations..."
+        echo "Attempt $attempt of $max_attempts to apply migrations..."
+        # Run upgrade head
         if UV_CACHE_DIR=$UV_CACHE_DIR uv run alembic upgrade head; then
             success=true
-            echo "Database migrations completed successfully."
+            echo "Database migrations applied successfully."
         else
             echo "Migration attempt $attempt failed. Waiting before retry..."
             # Print UV cache directory info for debugging
@@ -60,40 +72,22 @@ run_migrations() {
     done
     
     if [ "$success" = false ]; then
-        echo "ERROR: Failed to run migrations after $max_attempts attempts."
+        echo "ERROR: Failed to apply migrations after $max_attempts attempts."
         echo "Will continue startup, but application may not work correctly."
     fi
     
-    # Verify database tables exist
-    echo "Verifying database tables..."
-    if [ -f "db/doogie.db" ]; then
-        # Run a simple SQL query to verify the database file exists and has tables
-        sqlite3 db/doogie.db "SELECT name FROM sqlite_master WHERE type='table';"
-        if ! sqlite3 db/doogie.db ".tables" | grep -q "users"; then
-            echo "WARNING: Users table not found in database. Using SQLAlchemy initialization."
-            echo "Initializing database schema with SQLAlchemy..."
-            # Create a simple script to initialize the database
-            cat > init_db.py << EOF
-from app.db.base import init_db
-init_db()
-EOF
-            # Run the script
-            uv run python init_db.py
-            echo "Database initialization completed."
+    # Verification step is less critical now as autogenerate + upgrade should handle it
+    # but we can keep a basic check
+    echo "Verifying database connection..."
+    if [ -f "$DB_FILE" ]; then
+        # Run a simple SQL query to verify connection
+        if sqlite3 "$DB_FILE" "SELECT name FROM sqlite_master WHERE type='table' AND name='users';" | grep -q "users"; then
+            echo "Database verification successful (users table found)."
         else
-            echo "Database verification successful."
+            echo "WARNING: Users table not found after migrations. Check Alembic configuration and model definitions."
         fi
     else
-        echo "WARNING: Database file not found. Using SQLAlchemy initialization."
-        echo "Initializing database schema with SQLAlchemy..."
-        # Create a simple script to initialize the database
-        cat > init_db.py << EOF
-from app.db.base import init_db
-init_db()
-EOF
-        # Run the script
-        uv run python init_db.py
-        echo "Database initialization completed."
+        echo "ERROR: Database file $DB_FILE not found after migration attempt."
     fi
 }
 
