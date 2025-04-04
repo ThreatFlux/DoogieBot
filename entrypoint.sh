@@ -25,6 +25,43 @@ ensure_directories() {
     echo "UV cache directory set to: $UV_CACHE_DIR"
 }
 
+# Function to set up Docker socket permissions
+setup_docker_permissions() {
+    echo "Setting up Docker socket permissions..."
+    DOCKER_SOCKET=/var/run/docker.sock
+    if [ -S "$DOCKER_SOCKET" ]; then
+        DOCKER_SOCK_GID=$(stat -c %g $DOCKER_SOCKET)
+        echo "Docker socket GID: $DOCKER_SOCK_GID"
+        
+        # Check if group with this GID exists
+        if ! getent group $DOCKER_SOCK_GID > /dev/null; then
+            echo "Group with GID $DOCKER_SOCK_GID does not exist. Creating 'docker-sock-group'..."
+            groupadd -r -g $DOCKER_SOCK_GID docker-sock-group || echo "Failed to create group, maybe it exists with a different name?"
+            GROUP_NAME="docker-sock-group"
+        else
+            GROUP_NAME=$(getent group $DOCKER_SOCK_GID | cut -d: -f1)
+            echo "Group with GID $DOCKER_SOCK_GID exists: $GROUP_NAME"
+        fi
+        
+        # Add the current user (root, UID 0) to the group
+        # Check if user is already in the group
+        if ! id -nG "root" | grep -qw "$GROUP_NAME"; then
+            echo "Adding user 'root' to group '$GROUP_NAME' (GID: $DOCKER_SOCK_GID)..."
+            usermod -aG $GROUP_NAME root || echo "Failed to add root to group $GROUP_NAME. This might cause issues."
+            # Apply group changes immediately for the current shell (might not be strictly necessary for root)
+            # newgrp $GROUP_NAME || echo "newgrp failed, continuing..." 
+        else
+            echo "User 'root' is already in group '$GROUP_NAME'."
+        fi
+        
+        # Verify permissions (optional)
+        ls -l $DOCKER_SOCKET
+    else
+        echo "Docker socket $DOCKER_SOCKET not found. Skipping permission setup."
+    fi
+}
+
+
 # Run database migrations with retry logic
 run_migrations() {
     echo "Running database migrations..."
@@ -139,6 +176,9 @@ start_frontend() {
 
 # Ensure required directories exist
 ensure_directories
+
+# Set up Docker permissions
+setup_docker_permissions
 
 # Run migrations
 run_migrations
