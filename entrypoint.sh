@@ -7,11 +7,19 @@ ensure_directories() {
     mkdir -p /app/backend/db
     mkdir -p /app/backend/indexes
     mkdir -p /app/backend/uploads
+    mkdir -p /app/.uv-cache
     
     # Set proper permissions
     chmod -R 755 /app/backend/db
     chmod -R 755 /app/backend/indexes
     chmod -R 755 /app/backend/uploads
+    chmod -R 777 /app/.uv-cache # Make UV cache writable for everyone
+    
+    # Remove .git directory from UV cache if it exists (causing permission errors)
+    if [ -d "/app/.uv-cache/sdists-v9/.git" ]; then
+        echo "Removing problematic .git directory from UV cache..."
+        rm -rf /app/.uv-cache/sdists-v9/.git
+    fi
     
     echo "Directories checked and created if needed."
 }
