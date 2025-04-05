@@ -90,17 +90,37 @@ class LLMClient(ABC):
             return tokens / elapsed_time
         return 0.0
 
-    def format_chat_message(self, role: str, content: str) -> Dict[str, str]:
+    def format_chat_message(
+        self,
+        role: str,
+        content: Optional[str] = None, # Content can be None for assistant tool calls
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
+        tool_call_id: Optional[str] = None,
+        name: Optional[str] = None # For tool result messages
+    ) -> Dict[str, Any]:
         """
-        Format a chat message.
+        Format a chat message, potentially including tool calls or results.
 
         Args:
-            role: Message role (user, assistant, system)
-            content: Message content
+            role: Message role (user, assistant, system, tool)
+            content: Message content (can be None for assistant tool calls)
+            tool_calls: List of tool calls made by the assistant.
+            tool_call_id: ID of the tool call this message is a result for.
+            name: The name of the tool whose result this is.
 
         Returns:
-            Formatted message
+            Formatted message dictionary.
         """
-        # Basic format, specific clients might override if needed
-        # (e.g., for tool calls or results)
-        return {"role": role, "content": content}
+        message: Dict[str, Any] = {"role": role}
+        if content is not None:
+            message["content"] = content
+        if tool_calls:
+            message["tool_calls"] = tool_calls
+        if tool_call_id:
+            message["tool_call_id"] = tool_call_id
+        if name: # Include name if provided (typically for tool role)
+             message["name"] = name
+        # Ensure content is at least an empty string if not provided and not a tool call message
+        if "content" not in message and not tool_calls:
+             message["content"] = ""
+        return message

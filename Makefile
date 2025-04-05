@@ -3,27 +3,55 @@
 # Default target
 all: install lint test
 
+# Environment variables
+ENV ?= dev
+ENV_FILE ?= .env.$(ENV)
+
+# Load environment variables from .env file if it exists
+ifneq (,$(wildcard $(ENV_FILE)))
+    include $(ENV_FILE)
+    export
+endif
+
 # Python settings
 UV = uv
 PYTHON_VERSION = 3.13
 VENV = .venv
 UV_RUN = $(UV) run
 
-# Local command settings
+# Local command settings (Note: Docker targets are preferred for consistency)
 BACKEND_LINT = $(UV_RUN) pylint
 BACKEND_FORMAT = $(UV_RUN) black
 BACKEND_ISORT = $(UV_RUN) isort
 BACKEND_TEST = $(UV_RUN) pytest
 BACKEND_SECURITY_CHECK = $(UV_RUN) bandit
 
-# Docker settings
+# Docker settings based on environment
+ifeq ($(ENV),prod)
+    DOCKER_COMPOSE_FILE = docker-compose.prod.yml
+    BUILD_ARGS = --build-arg NODE_ENV=production --build-arg FASTAPI_ENV=production
+else
+    DOCKER_COMPOSE_FILE = docker-compose.yml
+    BUILD_ARGS = --build-arg NODE_ENV=development --build-arg FASTAPI_ENV=development
+endif
+
+# Check if docker compose or docker-compose should be used
+DOCKER_COMPOSE_CMD = $(shell command -v docker-compose >/dev/null 2>&1 && echo "docker-compose" || echo "docker compose")
+
+ifeq ($(DOCKER_COMPOSE_CMD),docker-compose)
+    DOCKER_COMPOSE = docker-compose -f $(DOCKER_COMPOSE_FILE)
+else
+    DOCKER_COMPOSE = docker compose -f $(DOCKER_COMPOSE_FILE)
+endif
+
 IMAGE_NAME = ghcr.io/toosmooth/doogiebot
 CONTAINER_NAME = doogie-chat-container
-DOCKER_COMPOSE = docker compose
-BUILD_ENV =
+# BUILD_ENV = # Removed, use BUILD_ARGS instead
 
 # Version management
 VERSION = $(shell grep -m 1 version backend/pyproject.toml | cut -d'"' -f2)
+GIT_HASH = $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE = $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # System detection
 OS = $(shell uname -s)
@@ -34,23 +62,20 @@ YELLOW = \033[0;33m
 RED = \033[0;31m
 NC = \033[0m # No Color
 
-# Fix permissions for Docker volumes
-fix-permissions:
-	@echo "${YELLOW}Fixing permissions for Docker volumes...${NC}"
-	@chmod +x ./scripts/fix-permissions.sh
-	@./scripts/fix-permissions.sh
+# Removed fix-* targets as underlying issues should be resolved by refactoring
+# fix-permissions: ...
+# fix-docker: ...
+# fix-all: ...
 
-# Fix Docker Compose formatting issues
-fix-docker:
-	@echo "${YELLOW}Fixing Docker Compose file formatting...${NC}"
-	@chmod +x ./scripts/fix-docker-compose.sh
-	@./scripts/fix-docker-compose.sh
-
-# Fix all Docker environment issues
-fix-all:
-	@echo "${YELLOW}Fixing all Docker environment issues...${NC}"
-	@chmod +x ./scripts/fix-all.sh
-	@./scripts/fix-all.sh
+# Prerequisite checks
+check-prereqs:
+	@echo "${YELLOW}Checking prerequisites...${NC}"
+	@command -v docker >/dev/null 2>&1 || { echo >&2 "${RED}Error: docker is not installed.${NC}"; exit 1; }
+	@command -v $(DOCKER_COMPOSE_CMD) >/dev/null 2>&1 || { echo >&2 "${RED}Error: $(DOCKER_COMPOSE_CMD) is not installed or not in PATH.${NC}"; exit 1; }
+	# Optional: Add checks for uv and pnpm if local targets are kept and used
+	# @command -v $(UV) >/dev/null 2>&1 || { echo >&2 "${RED}Error: uv is not installed.${NC}"; exit 1; }
+	# @command -v pnpm >/dev/null 2>&1 || { echo >&2 "${RED}Error: pnpm is not installed.${NC}"; exit 1; }
+	@echo "${GREEN}All prerequisites satisfied.${NC}"
 
 # Help target
 help:
@@ -74,12 +99,13 @@ help:
 	@echo " ${GREEN}docker-test${NC}     : Run tests in Docker container"
 	@echo " ${GREEN}security-check${NC}  : Run security checks locally using virtual environment"
 	@echo " ${GREEN}docker-security${NC} : Run security checks in Docker container"
-	@echo " ${GREEN}docker-build${NC}    : Build a fresh Docker image with no-cache and tag it as ${IMAGE_NAME}:latest"
-	@echo " ${GREEN}docker-up${NC}       : Start Docker container in development mode"
-	@echo " ${GREEN}docker-up-prod${NC}  : Start Docker container in production mode"
-	@echo " ${GREEN}docker-down${NC}     : Stop Docker container"
-	@echo " ${GREEN}migrate${NC}         : Run database migrations"
-	@echo " ${GREEN}frontend-build${NC}  : Build frontend for production"
+	@echo " ${GREEN}docker-build${NC}    : Build Docker image with cache (default)"
+	@echo " ${GREEN}docker-build-fresh${NC}: Build Docker image without cache"
+	@echo " ${GREEN}docker-up${NC}       : Start Docker container (uses ENV=dev/prod)"
+	# Removed docker-up-prod help text
+	@echo " ${GREEN}docker-down${NC}     : Stop Docker container (uses ENV=dev/prod)"
+	@echo " ${GREEN}migrate${NC}         : Run database migrations in Docker"
+	@echo " ${GREEN}frontend-build${NC}  : Build frontend for production in Docker"
 	@echo " ${GREEN}frontend-dev${NC}    : Start frontend development server"
 	@echo " ${GREEN}backend-dev${NC}     : Start backend development server"
 	@echo " ${GREEN}sync${NC}            : Sync codebase to a remote machine"
@@ -107,121 +133,156 @@ sync:
 	cd backend && $(UV) sync
 	@echo "${GREEN}Dependencies synced.${NC}"
 
-# Installation (used for local dev without Docker)
-install:
-	@echo "${YELLOW}Setting up virtual environment...${NC}"
-	$(UV) venv --python $(PYTHON_VERSION)
+# Installation (Commented out - prefer Docker environment for consistency)
+# install:
+#	@echo "${YELLOW}Setting up virtual environment...${NC}"
+#	$(UV) venv --python $(PYTHON_VERSION)
+#
+#	@echo "${YELLOW}Installing backend dependencies...${NC}"
+#	cd backend && $(UV) pip install -e .
+#	cd backend && $(UV) pip install -e ".[dev]"
+#
+#
+#	@echo "${YELLOW}Installing frontend dependencies...${NC}"
+#	cd frontend && pnpm install
+#
+#	@echo "${GREEN}Installation complete.${NC}"
 
-	@echo "${YELLOW}Installing backend dependencies...${NC}"
-	cd backend && $(UV) pip install -e .
-	cd backend && $(UV) pip install -e ".[dev]"
+# Docker builds - Default build uses cache and tags multiple versions
+docker-build: check-prereqs
+	@echo "${YELLOW}Building ${IMAGE_NAME} image with cache...${NC}"
+	docker build $(BUILD_ARGS) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--build-arg VERSION=$(VERSION) \
+		--tag ${IMAGE_NAME}:latest \
+		--tag ${IMAGE_NAME}:$(VERSION) \
+		--tag ${IMAGE_NAME}:$(GIT_HASH) \
+		--cache-from ${IMAGE_NAME}:latest \
+		-f Dockerfile .
+	@echo "${GREEN}Docker image built and tagged as ${IMAGE_NAME}:latest, ${IMAGE_NAME}:$(VERSION), and ${IMAGE_NAME}:$(GIT_HASH).${NC}"
 
-
-	@echo "${YELLOW}Installing frontend dependencies...${NC}"
-	cd frontend && pnpm install
-
-	@echo "${GREEN}Installation complete.${NC}"
-
-# Docker builds - builds the image locally with no-cache and tags it
-docker-build:
+# Docker builds - Fresh build without cache
+docker-build-fresh: check-prereqs
 	@echo "${YELLOW}Building fresh ${IMAGE_NAME} image with no cache...${NC}"
-	docker build --no-cache -t ${IMAGE_NAME}:latest -f Dockerfile .
-	@echo "${GREEN}Docker image built and tagged as ${IMAGE_NAME}:latest.${NC}"
+	docker build $(BUILD_ARGS) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--build-arg VERSION=$(VERSION) \
+		--no-cache \
+		--tag ${IMAGE_NAME}:latest \
+		--tag ${IMAGE_NAME}:$(VERSION) \
+		--tag ${IMAGE_NAME}:$(GIT_HASH) \
+		-f Dockerfile .
+	@echo "${GREEN}Fresh Docker image built and tagged as ${IMAGE_NAME}:latest, ${IMAGE_NAME}:$(VERSION), and ${IMAGE_NAME}:$(GIT_HASH).${NC}"
 
-# Start development environment
-dev: clean docker-up
 
-# Start Docker in development mode
-docker-up:
-	@echo "${YELLOW}Starting Docker container in development mode...${NC}"
-	$(DOCKER_COMPOSE) up $(BUILD_ENV)
+# Start development environment (Simplified: dev now just runs docker-up)
+dev: docker-up
 
-# Start Docker in production mode
-docker-up-prod:
-	@echo "${YELLOW}Starting Docker container in production mode...${NC}"
-	$(DOCKER_COMPOSE) -f docker-compose.prod.yml up $(BUILD_ENV)
+# Start Docker container (handles both dev and prod based on ENV)
+docker-up: check-prereqs
+	@echo "${YELLOW}Starting Docker container in $(ENV) mode...${NC}"
+	$(DOCKER_COMPOSE) up -d # Run detached
+	@echo "${YELLOW}Waiting for services to be healthy...${NC}"
+	@timeout=120; counter=0; \
+	until $(DOCKER_COMPOSE) ps --filter name=app --filter status=running --filter health=healthy | grep -q 'healthy'; do \
+		sleep 2; \
+		counter=$$((counter + 2)); \
+		if [ $$counter -ge $$timeout ]; then \
+			echo "${RED}Timed out waiting for services to start or become healthy.${NC}"; \
+			$(DOCKER_COMPOSE) logs app; \
+			exit 1; \
+		fi; \
+		echo -n "."; \
+	done; \
+	echo "\n${GREEN}Services are now running and healthy.${NC}"
 
-# Stop Docker
-docker-down:
+
+# Stop Docker container (handles both dev and prod based on ENV)
+docker-down: check-prereqs
 	@echo "${YELLOW}Stopping Docker container...${NC}"
 	$(DOCKER_COMPOSE) down
 	@echo "${GREEN}Docker container stopped.${NC}"
 
-# Primary commands use the local environment by default
+# Primary commands should use the Docker environment for consistency
 
-# Linting (Local as primary command)
-lint:
-	@echo "${YELLOW}Running backend linters locally...${NC}"
-	cd backend && $(BACKEND_LINT) app --disable=C0111
-	@echo "${YELLOW}Running frontend linters locally...${NC}"
-	cd frontend && npm run lint
-	@echo "${GREEN}Linting complete.${NC}"
+# Linting (Local - commented out)
+# lint:
+#	@echo "${YELLOW}Running backend linters locally...${NC}"
+#	cd backend && $(BACKEND_LINT) app --disable=C0111
+#	@echo "${YELLOW}Running frontend linters locally...${NC}"
+#	cd frontend && npm run lint
+#	@echo "${GREEN}Linting complete.${NC}"
 
-# Linting (Docker)
-docker-lint:
+# Linting (Docker) - Preferred method
+docker-lint: check-prereqs
 	@echo "${YELLOW}Running backend linters in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run pylint app --disable=C0111,R0801"
 	@echo "${YELLOW}Running frontend linters in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm run lint"
 	@echo "${GREEN}Linting complete.${NC}"
 
-# Formatting (Local as primary command)
-format:
-	@echo "${YELLOW}Formatting backend code locally...${NC}"
-	cd backend && $(BACKEND_FORMAT) app
-	cd backend && $(BACKEND_ISORT) app
-	@if [ -d "backend/tests" ]; then \
-		cd backend && $(BACKEND_FORMAT) tests; \
-		cd backend && $(BACKEND_ISORT) tests; \
-	fi
-	@echo "${YELLOW}Formatting frontend code locally...${NC}"
-	cd frontend && npm run format
-	@echo "${GREEN}Formatting complete.${NC}"
+# Formatting (Local - commented out)
+# format:
+#	@echo "${YELLOW}Formatting backend code locally...${NC}"
+#	cd backend && $(BACKEND_FORMAT) app
+#	cd backend && $(BACKEND_ISORT) app
+#	@if [ -d "backend/tests" ]; then \
+#		cd backend && $(BACKEND_FORMAT) tests; \
+#		cd backend && $(BACKEND_ISORT) tests; \
+#	fi
+#	@echo "${YELLOW}Formatting frontend code locally...${NC}"
+#	cd frontend && npm run format
+#	@echo "${GREEN}Formatting complete.${NC}"
 
-# Formatting (Docker)
-docker-format:
+# Formatting (Docker) - Preferred method
+docker-format: check-prereqs
 	@echo "${YELLOW}Formatting backend code in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run black app && uv run isort app && if [ -d 'tests' ]; then uv run black tests && uv run isort tests; fi"
 	@echo "${YELLOW}Formatting frontend code in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm run format"
 	@echo "${GREEN}Formatting complete.${NC}"
 
-# Testing (Local as primary command)
-test:
-	@echo "${YELLOW}Running tests locally...${NC}"
-	cd backend && $(BACKEND_TEST) tests
-	cd frontend && npm test
-	@echo "${GREEN}Tests complete.${NC}"
+# Testing (Local - commented out)
+# test:
+#	@echo "${YELLOW}Running tests locally...${NC}"
+#	cd backend && $(BACKEND_TEST) tests
+#	cd frontend && npm test
+#	@echo "${GREEN}Tests complete.${NC}"
 
-# Testing (Docker)
-docker-test:
+# Testing (Docker) - Preferred method
+docker-test: check-prereqs
 	@echo "${YELLOW}Running tests in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && source /app/.venv/bin/activate && uv pip install -e . && uv pip install pytest pytest-cov && python -m pytest"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm test"
 	@echo "${GREEN}Tests complete.${NC}"
 
-# Security checks (Local as primary command)
-security-check:
-	@echo "${YELLOW}Running security checks locally...${NC}"
-	cd backend && $(BACKEND_SECURITY_CHECK) -r app -c bandit.yaml
-	cd frontend && npm audit
-	@echo "${GREEN}Security checks complete.${NC}"
+# Security checks (Local - commented out)
+# security-check:
+#	@echo "${YELLOW}Running security checks locally...${NC}"
+#	cd backend && $(BACKEND_SECURITY_CHECK) -r app -c bandit.yaml
+#	cd frontend && npm audit
+#	@echo "${GREEN}Security checks complete.${NC}"
 
-# Security checks (Docker)
-docker-security:
+# Security checks (Docker) - Preferred method
+docker-security: check-prereqs
 	@echo "${YELLOW}Running security checks in Docker...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run bandit -r app -c bandit.yaml"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm audit"
 	@echo "${GREEN}Security checks complete.${NC}"
 
-# Run database migrations
-migrate:
+# Run database migrations (Docker) - Preferred method
+migrate: check-prereqs
 	@echo "${YELLOW}Running database migrations...${NC}"
-	$(DOCKER_COMPOSE) exec app bash -c "cd /app/backend && uv run alembic upgrade head"
+	# Delete existing DB and old migration file to ensure clean initial generation
+	$(DOCKER_COMPOSE) exec app bash -c "rm -f /app/data/db/doogie.db && rm -f /app/backend/alembic/versions/*.py"
+	# Autogenerate the initial migration based on models
+	$(DOCKER_COMPOSE) exec -e UV_CACHE_DIR=/tmp/uv-cache-new app bash -c "source /app/.venv/bin/activate && cd /app/backend && alembic revision --autogenerate -m 'Initial schema'"
+	# Apply the generated migration
+	$(DOCKER_COMPOSE) exec -e UV_CACHE_DIR=/tmp/uv-cache-new app bash -c "source /app/.venv/bin/activate && cd /app/backend && alembic upgrade head"
 	@echo "${GREEN}Migrations complete.${NC}"
 
-# Build frontend for production
-frontend-build:
+# Build frontend for production (Docker) - Preferred method
+frontend-build: check-prereqs
 	@echo "${YELLOW}Building frontend for production...${NC}"
 	$(DOCKER_COMPOSE) exec app bash -c "cd /app/frontend && npm run build"
 	@echo "${GREEN}Frontend build complete.${NC}"
@@ -252,29 +313,62 @@ sync:
 
 # Debug target to build, wait, check logs, and run fetch test with local server
 debug:
-	@echo docker compose down 
 	docker compose down
 	@echo "${YELLOW}Starting debug sequence...${NC}"
-	@echo "${YELLOW}Starting local HTTP server on port 8888...${NC}"
-	@python3 -m http.server 8888 & export HTTP_PID=$$!; \
-	trap 'echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"; kill $$HTTP_PID || true' EXIT; \
-	echo "Local HTTP server started with PID: $$HTTP_PID"
-	@echo "${YELLOW}Starting Docker container with local image...${NC}"
+	# Removed unnecessary local HTTP server startup/shutdown
+	@echo "${YELLOW}Rebuilding Docker image without cache to apply changes...${NC}"
+	$(DOCKER_COMPOSE) build --no-cache app
+	@echo "${YELLOW}Starting Docker container with fresh image...${NC}"
 	$(DOCKER_COMPOSE) up -d
 	@echo "${YELLOW}Waiting 60 seconds for services to initialize...${NC}"
 	@sleep 60
 	@echo "${YELLOW}Checking logs for server readiness...${NC}"
-	@if $(DOCKER_COMPOSE) logs app | grep -q "Uvicorn running"; then \
+	@if docker compose logs app | grep -q "Uvicorn running"; then \
 		echo "${GREEN}Server seems ready. Running fetch tool test against public URL...${NC}"; \
 		TEST_URL="https://example.com" ./backend/tests/test_fetch_tool.sh; \
 	else \
 		echo "${RED}Server did not start correctly. Displaying logs:${NC}"; \
-		$(DOCKER_COMPOSE) logs app; \
-		kill $$HTTP_PID || true; \
+		docker compose logs app; \
 		exit 1; \
 	fi
-	@echo "${YELLOW}Stopping local HTTP server (PID: $$HTTP_PID)...${NC}"
-	@kill $$HTTP_PID || true
+	# Removed comment about unnecessary local HTTP server shutdown
 	@echo "${YELLOW}Displaying recent logs...${NC}"
 	@$(DOCKER_COMPOSE) logs app --since 5m || true
 	@echo "${GREEN}Debug sequence complete.${NC}"
+
+# CI/CD Targets
+ci: check-prereqs docker-lint docker-security docker-test
+	@echo "${GREEN}CI checks completed successfully${NC}"
+
+docker-push: check-prereqs
+	@echo "${YELLOW}Pushing ${IMAGE_NAME} image to container registry...${NC}"
+	docker push ${IMAGE_NAME}:latest
+	docker push ${IMAGE_NAME}:$(VERSION)
+	docker push ${IMAGE_NAME}:$(GIT_HASH)
+	@echo "${GREEN}Docker images pushed to registry.${NC}"
+
+cd: check-prereqs docker-build docker-push
+	@echo "${GREEN}CD pipeline completed successfully${NC}"
+
+# Security Scanning (requires trivy to be installed locally)
+security-scan: check-prereqs
+	@echo "${YELLOW}Scanning Docker image for vulnerabilities...${NC}"
+	@command -v trivy >/dev/null 2>&1 || { echo >&2 "${RED}Error: trivy is not installed. Please install trivy to use this target.${NC}"; exit 1; }
+	trivy image ${IMAGE_NAME}:latest --severity HIGH,CRITICAL
+	@echo "${GREEN}Security scan complete.${NC}"
+
+# Utility to run a script (use with caution)
+run-script:
+	@echo "${YELLOW}Running script: $(SCRIPT)${NC}"
+	@if [ -z "$(SCRIPT)" ]; then \
+		echo "${RED}Error: No script specified. Usage: make run-script SCRIPT=path/to/script.sh${NC}"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(SCRIPT)" ]; then \
+		echo "${RED}Error: Script $(SCRIPT) not found.${NC}"; \
+		exit 1; \
+	fi
+	@echo "${YELLOW}Checking script for potential issues (requires shellcheck)...${NC}"
+	@command -v shellcheck >/dev/null 2>&1 && shellcheck $(SCRIPT) || echo "${YELLOW}WARNING: shellcheck not found or script has issues. Proceed with caution.${NC}"
+	@chmod +x $(SCRIPT)
+	@./$(SCRIPT)

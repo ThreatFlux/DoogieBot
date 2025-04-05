@@ -217,7 +217,7 @@ class LLMService:
         if self.user_id:
             try:
                 # Get all enabled MCP configs for this user
-                enabled_mcp_configs = [c for c in MCPConfigService.get_configs_by_user(self.db, self.user_id) if c.enabled]
+                enabled_mcp_configs = [c for c in MCPConfigService.get_configs_by_user(self.db, self.user_id) if c.config and c.config.get('enabled', False)]
                 logger.info(f"Found {len(enabled_mcp_configs)} enabled MCP servers for user {self.user_id}")
 
                 # First try to format tools using KNOWN_MCP_TOOL_SCHEMAS
@@ -345,16 +345,16 @@ class LLMService:
             # Return awaitable generator to be awaited by the caller
             stream_generator = stream_llm_response(
                 db=self.db,
-                chat_client=self.chat_client, 
+                chat_client=self.chat_client,
                 chat_id=chat_id,
-                formatted_messages=formatted_messages, 
-                temperature=self.temperature, 
+                formatted_messages=formatted_messages,
+                temperature=self.temperature,
                 max_tokens=max_tokens,
-                context_documents=context_documents, 
+                context_documents=context_documents,
                 system_prompt=current_system_prompt,
-                model=self.model, 
-                provider=self.provider, 
-                tools=tools
+                model=self.model,
+                provider=self.provider,
+                tools=tools # <-- Pass tools to the streaming function
             )
             return stream_generator # Return the awaitable generator directly
         else:
@@ -498,126 +498,74 @@ class LLMService:
                                 )
 
                     if tool_execution_tasks:
-                         execution_outcomes = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
-                         for i, outcome in enumerate(execution_outcomes):
-                             try:
-                                 original_call_info = tool_calls[i] # Assumes order matches tasks
-                                 tool_call_id = original_call_info["id"]
-                                 full_tool_name = original_call_info["function"]["name"]
+                        # Execute all tool calls concurrently
+                        tool_results = await asyncio.gather(*tool_execution_tasks)
 
-                                 if isinstance(outcome, Exception):
-                                     logger.exception(f"Error executing tool {full_tool_name}: {outcome}")
-                                     tool_result_content_str = json.dumps({"error": {"message": f"Error executing tool: {str(outcome)}"}})
-                                 else:
-                                     tool_result_content_str = outcome.get("result", '{"error": "Tool execution failed."}')
+                        # Process results and save them
+                        for result in tool_results:
+                            tool_call_id = result.get("tool_call_id")
+                            tool_name = result.get("tool_name") # The name used in the LLM request
+                            tool_result_content_str = result.get("content") # JSON string
 
-                                 tool_message_for_llm = {"role": "tool", "tool_call_id": tool_call_id, "name": full_tool_name, "content": tool_result_content_str}
-                                 tool_results_messages.append(tool_message_for_llm)
-                                 ChatService.add_message(self.db, chat_id, "tool", content=tool_result_content_str, tool_call_id=tool_call_id, name=full_tool_name)
-                             except Exception as e:
-                                 logger.exception(f"Error processing tool execution outcome: {e}")
+                            if tool_call_id and tool_name and tool_result_content_str:
+                                # Save tool result message to DB
+                                ChatService.add_message(
+                                    self.db, chat_id, "tool", content=tool_result_content_str,
+                                    tool_call_id=tool_call_id, name=tool_name
+                                )
+                                # Prepare message for next LLM turn
+                                tool_message_for_llm = self.chat_client.format_chat_message(
+                                    "tool",
+                                    tool_result_content_str,
+                                    tool_call_id=tool_call_id,
+                                    name=tool_name
+                                )
+                                tool_results_messages.append(tool_message_for_llm)
+                            else:
+                                logger.error(f"Incomplete tool result received: {result}")
 
-                    current_formatted_messages.extend(tool_results_messages) # Add results for the next LLM call
-                    # Continue to the next iteration of the loop
-
-                elif content:
-                    # --- Handle Final Content Response ---
-                    logger.info(f"Received final content response on turn {turn + 1}.")
+                    # Append all tool result messages to the history for the next turn
+                    current_formatted_messages.extend(tool_results_messages)
+                    # Continue to the next turn
+                    continue
+                else:
+                    # No tool calls, this is the final response for this user message
+                    logger.info(f"No tool calls in response. Finish reason: {finish_reason}")
+                    # Save the final assistant message
                     ChatService.add_message(
-                        self.db, chat_id, "assistant", content,
-                        tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                        tokens_per_second=tokens_per_second, model=response_model, provider=response_provider,
+                        self.db, chat_id, "assistant", content=content,
+                        tokens=total_tokens, prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens, tokens_per_second=tokens_per_second,
+                        model=response_model, provider=response_provider,
                         context_documents=[doc["id"] for doc in context_documents] if context_documents else None,
                         finish_reason=finish_reason
                     )
-                    return current_response # Exit loop and return final response
-                else:
-                    # Handle unexpected empty response
-                    logger.warning(f"LLM response had no content or tool_calls on turn {turn + 1}. Finish reason: {finish_reason}")
-                    error_content = "I received an empty response from the AI model."
-                    ChatService.add_message(self.db, chat_id, "assistant", error_content, finish_reason=finish_reason or "error", model=response_model, provider=response_provider)
-                    current_response["content"] = error_content # Add error content
-                    return current_response # Exit loop and return error response
+                    # Return the final response dictionary
+                    return current_response
 
-            # If loop finishes without returning content (exceeded MAX_TOOL_TURNS)
-            logger.error(f"Exceeded maximum tool turns ({MAX_TOOL_TURNS}).")
-            error_content = "I could not complete the request after multiple tool uses. Please try rephrasing."
-            ChatService.add_message(self.db, chat_id, "assistant", error_content, finish_reason="tool_loop_limit", model=self.model, provider=self.provider)
-            # Return the last response received but add error content
-            if current_response: current_response["content"] = error_content
-            else: current_response = {"content": error_content, "finish_reason": "tool_loop_limit"}
-            return current_response
+            # If loop finishes without returning (e.g., MAX_TOOL_TURNS reached)
+            logger.warning(f"Reached maximum tool turns ({MAX_TOOL_TURNS}). Returning last response.")
+            # Save the last assistant message if it wasn't saved already
+            if current_response and not tool_calls:
+                 ChatService.add_message(
+                     self.db, chat_id, "assistant", content=current_response.get("content"),
+                     tokens=total_tokens, prompt_tokens=prompt_tokens,
+                     completion_tokens=completion_tokens, tokens_per_second=tokens_per_second,
+                     model=response_model, provider=response_provider,
+                     context_documents=[doc["id"] for doc in context_documents] if context_documents else None,
+                     finish_reason="length" # Indicate max turns reached
+                 )
+            return current_response or {"content": "Maximum tool interaction limit reached.", "finish_reason": "length"}
 
-
-    async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """ Get embeddings for a list of texts using the configured embedding client. """
-        return await self.embedding_client.get_embeddings(texts)
 
     async def get_available_models(self) -> tuple[List[str], List[str]]:
-        """ Get available models for the current provider. """
-        chat_models = []
-        embedding_models = []
-
+        """
+        Get available chat and embedding models from the factory.
+        """
         try:
-            if hasattr(self.chat_client, 'list_models'):
-                models_data = await self.chat_client.list_models()
-                if self.provider == "ollama":
-                    chat_models = models_data
-                    embedding_models = models_data
-                elif self.provider == "openrouter":
-                    model_groups = {}
-                    for model_info in models_data:
-                        if model_info.get("id"):
-                            provider_prefix = model_info["id"].split("/")[0] if "/" in model_info["id"] else "other"
-                            if provider_prefix not in model_groups:
-                                model_groups[provider_prefix] = []
-                            model_groups[provider_prefix].append(model_info["id"])
-                    for provider_prefix in sorted(model_groups.keys()):
-                        chat_models.extend(sorted(model_groups[provider_prefix]))
-                    embedding_models = ["openai/text-embedding-ada-002"]
-                else:
-                    chat_models = models_data
-                    embedding_models = []
-            elif self.provider == "openai":
-                chat_models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
-                embedding_models = ["text-embedding-ada-002", "text-embedding-3-small", "text-embedding-3-large"]
-            elif self.provider == "anthropic":
-                chat_models = ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307", "claude-2.1", "claude-2.0", "claude-instant-1.2"]
-                embedding_models = []
-            elif self.provider == "google_gemini":
-                try:
-                    api_key_to_use = self.api_key or LLMConfigService.get_active_config(self.db).api_key
-                    if api_key_to_use:
-                        genai.configure(api_key=api_key_to_use)
-                        all_models = genai.list_models()
-                        for model in all_models:
-                            if 'generateContent' in model.supported_generation_methods:
-                                chat_models.append(model.name)
-                            if 'embedContent' in model.supported_generation_methods and 'aqa' not in model.name:
-                                embedding_models.append(model.name)
-                        chat_models.sort()
-                        embedding_models.sort()
-                    else:
-                        raise ValueError("Google Gemini API key required.")
-                except Exception as e:
-                    logger.error(f"Failed to list Google Gemini models dynamically: {e}. Using fallback.")
-                    chat_models = ["models/gemini-pro", "models/gemini-1.5-pro-latest"]
-                    embedding_models = ["models/embedding-001"]
-            elif self.provider == "deepseek":
-                chat_models = ["deepseek-chat", "deepseek-coder"]
-                embedding_models = ["deepseek-embedding"]
-            else:
-                logger.warning(f"Model listing not implemented or failed for provider: {self.provider}")
-
-            if self.embedding_client != self.chat_client and hasattr(self.embedding_client, 'list_models'):
-                try:
-                    embedding_models_from_client = await self.embedding_client.list_models()
-                    if embedding_models_from_client:
-                        embedding_models = embedding_models_from_client
-                except Exception as e:
-                    logger.error(f"Failed to list models from separate embedding client: {e}")
-
-            return sorted(list(set(chat_models))), sorted(list(set(embedding_models)))
+            chat_models = await LLMFactory.get_available_chat_models()
+            embedding_models = await LLMFactory.get_available_embedding_models()
+            return chat_models, embedding_models
         except Exception as e:
-            logger.error(f"Error getting available models: {e}")
+            logger.error(f"Error fetching available models: {e}")
             return [], []

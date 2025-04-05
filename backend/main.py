@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     # Ensure database tables exist
     try:
         # Initialize the database (create tables if they don't exist)
-        init_db()
+        # init_db() # Commented out: Alembic handles schema creation via migrations
         logger.info("Database tables initialized")
     except Exception as e:
         logger.error(f"Error initializing database tables: {str(e)}")

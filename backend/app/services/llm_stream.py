@@ -22,7 +22,8 @@ async def stream_llm_response(
     context_documents: Optional[List[Dict[str, Any]]],
     system_prompt: Optional[str], # Added system_prompt
     model: Optional[str], # Added model
-    provider: Optional[str] # Added provider
+    provider: Optional[str], # Added provider
+    tools: Optional[List[Dict[str, Any]]] = None # <-- Add tools parameter
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Stream response from the LLM and save the final message.
@@ -38,6 +39,7 @@ async def stream_llm_response(
         system_prompt: The system prompt to use.
         model: The model name being used.
         provider: The provider name being used.
+        tools: Optional list of tool definitions to pass to the LLM.
 
     Yields:
         Chunks of the response.
@@ -68,6 +70,7 @@ async def stream_llm_response(
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
+            "tools": tools, # <-- Pass tools if provided
         }
         # Conditionally add system_prompt for clients that support it as a separate argument
         if isinstance(chat_client, (AnthropicClient, GoogleGeminiClient)):

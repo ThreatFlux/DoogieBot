@@ -96,16 +96,10 @@ class ChatService:
             role=role,
             content=content,
             tokens=tokens,
-            prompt_tokens=prompt_tokens, # Save prompt_tokens
-            completion_tokens=completion_tokens, # Save completion_tokens
             tokens_per_second=tokens_per_second,
             model=model,
             provider=provider,
             context_documents=context_documents,
-            finish_reason=finish_reason, # Save finish_reason
-            tool_calls=tool_calls, # Save tool_calls
-            tool_call_id=tool_call_id, # Save tool_call_id
-            name=name, # Save name
             created_at=current_time
         )
         db.add(message)

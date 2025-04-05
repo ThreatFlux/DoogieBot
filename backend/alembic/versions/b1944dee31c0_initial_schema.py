@@ -1,8 +1,8 @@
-"""Auto-generated migration on startup
+"""Initial schema
 
-Revision ID: 1a80cbac1f8a
+Revision ID: b1944dee31c0
 Revises: 
-Create Date: 2025-04-04 12:24:30.728042
+Create Date: 2025-04-04 17:09:46.040366
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import sqlite
 
 # revision identifiers, used by Alembic.
-revision = '1a80cbac1f8a'
+revision = 'b1944dee31c0'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -61,7 +61,9 @@ def upgrade() -> None:
     sa.Column('config', sa.JSON(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_llm_config_is_active'), 'llm_config', ['is_active'], unique=False)
+    with op.batch_alter_table('llm_config', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_llm_config_is_active'), ['is_active'], unique=False)
+
     op.create_table('rag_config',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('bm25_enabled', sa.Boolean(), nullable=True),
@@ -97,8 +99,10 @@ def upgrade() -> None:
     sa.Column('last_login', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
-    op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
+    with op.batch_alter_table('users', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_users_email'), ['email'], unique=True)
+        batch_op.create_index(batch_op.f('ix_users_id'), ['id'], unique=False)
+
     op.create_table('chats',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('user_id', sa.String(), nullable=False),
@@ -108,7 +112,9 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_chats_id'), 'chats', ['id'], unique=False)
+    with op.batch_alter_table('chats', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_chats_id'), ['id'], unique=False)
+
     op.create_table('documents',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('filename', sa.String(), nullable=True),
@@ -122,7 +128,9 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['uploaded_by'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_documents_id'), 'documents', ['id'], unique=False)
+    with op.batch_alter_table('documents', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_documents_id'), ['id'], unique=False)
+
     op.create_table('index_operations',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('index_id', sa.String(), nullable=False),
@@ -164,7 +172,9 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_tags_id'), 'tags', ['id'], unique=False)
+    with op.batch_alter_table('tags', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_tags_id'), ['id'], unique=False)
+
     op.create_table('chat_tags',
     sa.Column('chat_id', sa.String(), nullable=False),
     sa.Column('tag_id', sa.String(), nullable=False),
@@ -184,7 +194,9 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_document_chunks_id'), 'document_chunks', ['id'], unique=False)
+    with op.batch_alter_table('document_chunks', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_document_chunks_id'), ['id'], unique=False)
+
     op.create_table('messages',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('chat_id', sa.String(), nullable=False),
@@ -204,7 +216,9 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['related_question_id'], ['messages.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_messages_id'), 'messages', ['id'], unique=False)
+    with op.batch_alter_table('messages', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_messages_id'), ['id'], unique=False)
+
     op.create_table('graph_nodes',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('chunk_id', sa.String(), nullable=False),
@@ -215,7 +229,9 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['chunk_id'], ['document_chunks.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_graph_nodes_id'), 'graph_nodes', ['id'], unique=False)
+    with op.batch_alter_table('graph_nodes', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_graph_nodes_id'), ['id'], unique=False)
+
     op.create_table('graph_edges',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('source_id', sa.String(), nullable=False),
@@ -228,35 +244,55 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['target_id'], ['graph_nodes.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_graph_edges_id'), 'graph_edges', ['id'], unique=False)
+    with op.batch_alter_table('graph_edges', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_graph_edges_id'), ['id'], unique=False)
+
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_index(op.f('ix_graph_edges_id'), table_name='graph_edges')
+    with op.batch_alter_table('graph_edges', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_graph_edges_id'))
+
     op.drop_table('graph_edges')
-    op.drop_index(op.f('ix_graph_nodes_id'), table_name='graph_nodes')
+    with op.batch_alter_table('graph_nodes', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_graph_nodes_id'))
+
     op.drop_table('graph_nodes')
-    op.drop_index(op.f('ix_messages_id'), table_name='messages')
+    with op.batch_alter_table('messages', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_messages_id'))
+
     op.drop_table('messages')
-    op.drop_index(op.f('ix_document_chunks_id'), table_name='document_chunks')
+    with op.batch_alter_table('document_chunks', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_document_chunks_id'))
+
     op.drop_table('document_chunks')
     op.drop_table('chat_tags')
-    op.drop_index(op.f('ix_tags_id'), table_name='tags')
+    with op.batch_alter_table('tags', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_tags_id'))
+
     op.drop_table('tags')
     op.drop_table('mcp_server_configs')
     op.drop_table('index_operations')
-    op.drop_index(op.f('ix_documents_id'), table_name='documents')
+    with op.batch_alter_table('documents', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_documents_id'))
+
     op.drop_table('documents')
-    op.drop_index(op.f('ix_chats_id'), table_name='chats')
+    with op.batch_alter_table('chats', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_chats_id'))
+
     op.drop_table('chats')
-    op.drop_index(op.f('ix_users_id'), table_name='users')
-    op.drop_index(op.f('ix_users_email'), table_name='users')
+    with op.batch_alter_table('users', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_users_id'))
+        batch_op.drop_index(batch_op.f('ix_users_email'))
+
     op.drop_table('users')
     op.drop_table('reranking_config')
     op.drop_table('rag_config')
-    op.drop_index(op.f('ix_llm_config_is_active'), table_name='llm_config')
+    with op.batch_alter_table('llm_config', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_llm_config_is_active'))
+
     op.drop_table('llm_config')
     op.drop_table('index_meta')
     op.drop_table('embedding_config')

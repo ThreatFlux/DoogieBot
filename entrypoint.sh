@@ -9,14 +9,11 @@ ensure_directories() {
     mkdir -p /app/data/indexes
     mkdir -p /app/backend/uploads # Uploads can stay within backend for now
     
-    # Set proper permissions for data directories
-    chmod -R 777 /app/data/db
-    chmod -R 777 /app/data/indexes
-    chmod -R 755 /app/backend/uploads
+    # Permissions should be handled by Dockerfile chown and user/group mapping
+    # Removed chmod 777/755 calls
     
-    # Create a new UV cache directory with proper permissions from the start
+    # Create a new UV cache directory (permissions handled by user context)
     mkdir -p /tmp/uv-cache-new
-    chmod 777 /tmp/uv-cache-new
     
     # Set UV to use our new cache directory
     export UV_CACHE_DIR=/tmp/uv-cache-new
@@ -25,39 +22,20 @@ ensure_directories() {
     echo "UV cache directory set to: $UV_CACHE_DIR"
 }
 
-# Function to set up Docker socket permissions
-setup_docker_permissions() {
-    echo "Setting up Docker socket permissions..."
+# Function to check Docker socket access (simplified)
+check_docker_permissions() {
+    echo "Checking Docker socket permissions..."
     DOCKER_SOCKET=/var/run/docker.sock
     if [ -S "$DOCKER_SOCKET" ]; then
-        DOCKER_SOCK_GID=$(stat -c %g $DOCKER_SOCKET)
-        echo "Docker socket GID: $DOCKER_SOCK_GID"
-        
-        # Check if group with this GID exists
-        if ! getent group $DOCKER_SOCK_GID > /dev/null; then
-            echo "Group with GID $DOCKER_SOCK_GID does not exist. Creating 'docker-sock-group'..."
-            groupadd -r -g $DOCKER_SOCK_GID docker-sock-group || echo "Failed to create group, maybe it exists with a different name?"
-            GROUP_NAME="docker-sock-group"
+        if [ -w "$DOCKER_SOCKET" ]; then
+            echo "User ($(id -u):$(id -g)) appears to have write access to the Docker socket."
         else
-            GROUP_NAME=$(getent group $DOCKER_SOCK_GID | cut -d: -f1)
-            echo "Group with GID $DOCKER_SOCK_GID exists: $GROUP_NAME"
+            echo "WARNING: User ($(id -u):$(id -g)) may not have write access to the Docker socket ($DOCKER_SOCKET)."
+            echo "Ensure the container user's group ID matches the Docker socket's group ID on the host."
+            ls -l $DOCKER_SOCKET
         fi
-        
-        # Add the current user (root, UID 0) to the group
-        # Check if user is already in the group
-        if ! id -nG "root" | grep -qw "$GROUP_NAME"; then
-            echo "Adding user 'root' to group '$GROUP_NAME' (GID: $DOCKER_SOCK_GID)..."
-            usermod -aG $GROUP_NAME root || echo "Failed to add root to group $GROUP_NAME. This might cause issues."
-            # Apply group changes immediately for the current shell (might not be strictly necessary for root)
-            # newgrp $GROUP_NAME || echo "newgrp failed, continuing..." 
-        else
-            echo "User 'root' is already in group '$GROUP_NAME'."
-        fi
-        
-        # Verify permissions (optional)
-        ls -l $DOCKER_SOCKET
     else
-        echo "Docker socket $DOCKER_SOCKET not found. Skipping permission setup."
+        echo "Docker socket $DOCKER_SOCKET not found. Skipping permission check."
     fi
 }
 
@@ -70,8 +48,9 @@ run_migrations() {
     # Ensure the database file exists in the persistent location
     DB_FILE="/app/data/db/doogie.db"
     mkdir -p "$(dirname "$DB_FILE")"
+    # Create file if it doesn't exist, permissions handled by user context
     touch "$DB_FILE"
-    chmod 666 "$DB_FILE"
+    # Removed chmod 666
     echo "Ensured database file exists at $DB_FILE"
     
     # Ensure UV environment variable is exported here too
@@ -83,11 +62,24 @@ run_migrations() {
     local max_attempts=5
     local attempt=1
     local success=false
+
+    # Removed chown attempt as venv is now outside the mounted directory
     
+    # Activate the virtual environment from the new location
+    VENV_PATH="/app/.venv"
+    if [ -f "$VENV_PATH/bin/activate" ]; then
+        echo "Activating virtual environment at $VENV_PATH..."
+        source "$VENV_PATH/bin/activate"
+    else
+        echo "ERROR: Virtual environment activation script not found at $VENV_PATH/bin/activate. Exiting."
+        exit 1
+    fi
+
     while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
         echo "Attempt $attempt of $max_attempts to apply migrations..."
         # Run upgrade head
-        if UV_CACHE_DIR=$UV_CACHE_DIR uv run alembic upgrade head; then
+        # Run alembic directly now that the venv is activated
+        if alembic upgrade head; then
             success=true
             echo "Database migrations applied successfully."
         else
@@ -101,8 +93,8 @@ run_migrations() {
     done
     
     if [ "$success" = false ]; then
-        echo "ERROR: Failed to apply migrations after $max_attempts attempts."
-        echo "Will continue startup, but application may not work correctly."
+        echo "ERROR: Failed to apply migrations after $max_attempts attempts. Exiting."
+        exit 1 # Exit if migrations fail
     fi
     
     # Verification step is less critical now as autogenerate + upgrade should handle it
@@ -120,87 +112,135 @@ run_migrations() {
     fi
 }
 
-# Function to start the backend
+# Function to start the backend (handles dev/prod)
 start_backend() {
-    echo "Starting backend server..."
+    echo "Starting backend server in $FASTAPI_ENV mode..."
     cd /app/backend
-    
+
     # Ensure UV environment variable is set here too
     export UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/uv-cache-new}
     echo "Using UV cache directory: $UV_CACHE_DIR for backend"
-    
-    # Use a single worker with memory limits to prevent crashes
-    # Set PYTHONMALLOC=debug to help catch memory issues
-    export PYTHONMALLOC=debug
-    # Set memory limits
-    export PYTHONWARNINGS=always
-    # Use a single worker with memory limits, run uvicorn directly in foreground
-    UV_CACHE_DIR=$UV_CACHE_DIR uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload --workers 1 --timeout-keep-alive 300 --timeout-graceful-shutdown 300 --log-level debug --limit-concurrency 20 --backlog 50
-    # No backgrounding (&) or PID needed when running in foreground
-    echo "Backend server started in foreground."
-}
 
-# Function to prepare frontend dependencies
-prepare_frontend() {
-    cd /app/frontend
-    
-    # Configure pnpm to use a specific store directory with proper permissions
-    echo "Configuring pnpm store..."
-    pnpm config set store-dir /app/.pnpm-store
-    
-    # Check if we have write permissions
-    if [ ! -w "." ] || [ ! -w "/app/.pnpm-store" ]; then
-        echo "Warning: Permission issues detected. Attempting to fix..."
-        # mkdir -p node_modules .next # Directory creation moved to Dockerfile
+    # Activate the virtual environment from the new location
+    VENV_PATH="/app/.venv"
+    if [ -f "$VENV_PATH/bin/activate" ]; then
+        echo "Activating virtual environment at $VENV_PATH..."
+        source "$VENV_PATH/bin/activate"
+    else
+        echo "ERROR: Virtual environment activation script not found at $VENV_PATH/bin/activate. Exiting."
+        exit 1
     fi
-    
-    # Always run pnpm install on startup in dev to catch any missing deps
-    echo "Ensuring frontend dependencies are installed..."
-    # Use --shamefully-hoist for better compatibility in Docker
-    # Use --no-strict-peer-dependencies to avoid peer dependency issues
-    pnpm install --shamefully-hoist --no-strict-peer-dependencies
-    echo "Frontend dependencies check complete."
+
+    if [ "$FASTAPI_ENV" = "production" ]; then
+        # Production: Use multiple workers, no reload
+        echo "Starting production backend..."
+        uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 300 &
+        BACKEND_PID=$!
+        echo "Production backend server started with PID: $BACKEND_PID"
+    else
+        # Development: Use single worker with reload, run foreground
+        echo "Starting development backend..."
+        export PYTHONMALLOC=debug
+        export PYTHONWARNINGS=always
+        # Run uvicorn directly now that the venv is activated
+        uvicorn main:app --host 0.0.0.0 --port 8000 --reload --workers 1 --timeout-keep-alive 300 --timeout-graceful-shutdown 300 --log-level debug --limit-concurrency 20 --backlog 50
+        # No backgrounding (&) or PID needed when running in foreground
+        echo "Development backend server started in foreground."
+    fi
 }
 
+# Removed prepare_frontend_dev function entirely as requested
 
-# Function to start the frontend
+
+# Function to start the frontend (handles dev/prod)
 start_frontend() {
-    echo "Starting frontend server..."
+    echo "Starting frontend server in $FASTAPI_ENV mode..."
     cd /app/frontend
-    
-    # Start Next.js development server with turbo mode
-    NODE_OPTIONS="--max_old_space_size=4096" pnpm dev --turbo &
-    FRONTEND_PID=$!
-    echo "Frontend server started with PID: $FRONTEND_PID"
+
+    if [ "$FASTAPI_ENV" = "production" ]; then
+        # Production: Start built application
+        echo "Starting production frontend..."
+        pnpm start &
+        FRONTEND_PID=$!
+        echo "Production frontend server started with PID: $FRONTEND_PID"
+    else
+        # Development: Start dev server with turbo
+        echo "Starting development frontend..."
+        NODE_OPTIONS="--max_old_space_size=4096" pnpm dev --turbo &
+        FRONTEND_PID=$!
+        echo "Development frontend server started with PID: $FRONTEND_PID"
+    fi
 }
+
+# --- Main Execution ---
+
+# Determine environment (default to development if not set)
+export FASTAPI_ENV=${FASTAPI_ENV:-development}
+echo "Running entrypoint in $FASTAPI_ENV mode..."
 
 # Ensure required directories exist
 ensure_directories
 
-# Set up Docker permissions
-setup_docker_permissions
+# Check Docker permissions (informational)
+check_docker_permissions
 
-# Run migrations
+# Run migrations (common to both modes)
 run_migrations
 
-# Add a delay to ensure database is ready
-echo "Waiting for 3 seconds to ensure database is ready..."
-sleep 3
+# Environment-specific startup logic
+if [ "$FASTAPI_ENV" = "production" ]; then
+    # --- Production Startup ---
+    echo "Starting production services..."
+    start_backend # Starts in background
+    start_frontend # Starts in background
 
-# Prepare frontend before starting services
-prepare_frontend # Re-added this call
+    # Handle shutdown for background processes
+    shutdown() {
+        echo "Shutting down production services..."
+        if [ ! -z "$BACKEND_PID" ]; then kill -TERM $BACKEND_PID; fi
+        if [ ! -z "$FRONTEND_PID" ]; then kill -TERM $FRONTEND_PID; fi
+        exit 0
+    }
+    trap shutdown SIGTERM SIGINT
 
-# Start frontend in background first
-start_frontend
-echo "Waiting 5 seconds for frontend to potentially build..."
-sleep 5
+    # Keep container alive while background processes run
+    echo "Production services started. Waiting for processes..."
+    wait $BACKEND_PID $FRONTEND_PID
 
-# Start backend in foreground (this will block until stopped)
-start_backend
+else
+    # --- Development Startup ---
+    echo "Starting development services..."
+    # Removed fixed sleep waits; rely on health checks or service readiness
 
-# Shutdown handling might need adjustment if backend runs foreground
-# The trap should still work if the container receives SIGTERM/SIGINT
-shutdown() {
+    # Prepare frontend dependencies specifically for dev
+    # Skipping prepare_frontend_dev call as requested
+
+    # Start frontend in background first
+    start_frontend
+    # Removed fixed sleep wait
+
+    echo "Waiting 10 seconds before starting backend to allow Docker Desktop socket time..."
+    sleep 10
+
+    # Start backend in foreground (this will block until stopped)
+    start_backend
+
+    # Shutdown handling for dev (only need to kill frontend if backend exits)
+    shutdown() {
+        echo "Shutting down development services..."
+        # Backend runs foreground, so trap mainly catches frontend
+        if [ ! -z "$FRONTEND_PID" ]; then kill -TERM $FRONTEND_PID; fi
+        exit 0
+    }
+    trap shutdown SIGTERM SIGINT
+
+    # No 'wait' needed as backend runs foreground
+    echo "Development backend running in foreground. Container will stay alive."
+
+fi
+
+# Fallback exit (should not be reached normally)
+exit 1
     echo "Shutting down services..."
     if [ ! -z "$BACKEND_PID" ]; then
         kill -TERM $BACKEND_PID

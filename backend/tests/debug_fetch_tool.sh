@@ -132,6 +132,10 @@ test_various_prompts() {
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer ${TOKEN}" \
       -d "{\"content\":\"${prompt}\"}")
+    # Capture logs immediately after the request, especially if it might fail
+    echo -e "${YELLOW}Capturing Docker logs after non-streaming /llm call...${NC}"
+    docker logs doogietest-app-1 --tail 100 || echo -e "${RED}Failed to capture docker logs.${NC}"
+    
     
     # Check for tool_calls in the response
     TOOL_CALLS=$(echo $RESPONSE | jq -r '.tool_calls')
