@@ -85,10 +85,7 @@ class GitHubCopilotClient(LLMClient):
     ) -> AsyncGenerator[Dict[str, Any], None]:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=payload) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"GitHub API error: {error_text}")
-                    raise Exception(f"GitHub API error: {response.status} - {error_text}")
+                await self._handle_non_200_response(response)
                 content = ""
                 token_count = 0
                 async for line in response.content:
